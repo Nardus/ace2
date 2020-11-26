@@ -1,39 +1,57 @@
 ## Utility functions for calculating amino-acid distances
-require(dplyr)
 require(Matrix)
+require(parallel)
 
 # ---- Load raw distance matrices -----------------------------------------------------------------
 # Grantham, derived from the AAindex database 
 #   (https://www.genome.jp/dbget-bin/www_bget?aaindex:GRAR740104)
-grantham_mat <- read.csv("data/internal/distance_matrices/grantham.csv")
-rownames(grantham_mat) <- colnames(grantham_mat)
-grantham_mat <- as.matrix(grantham_mat)
-grantham_mat <- forceSymmetric(grantham_mat, uplo = "L")
-grantham_mat <- as.matrix(grantham_mat)
+GRANTHAM_MAT <- read.csv("data/internal/distance_matrices/grantham.csv")
+rownames(GRANTHAM_MAT) <- colnames(GRANTHAM_MAT)
+GRANTHAM_MAT <- as.matrix(GRANTHAM_MAT)
+GRANTHAM_MAT <- forceSymmetric(GRANTHAM_MAT, uplo = "L")
+GRANTHAM_MAT <- as.matrix(GRANTHAM_MAT)
 
 # BLOSUM100, downloaded from ftp://ftp.ncbi.nih.gov/blast/matrices/:
-blosum_mat <- read.table("data/internal/distance_matrices/BLOSUM100", check.names = FALSE)
-blosum_mat <- as.matrix(blosum_mat)
+BLOSUM_MAT <- read.table("data/internal/distance_matrices/BLOSUM100", check.names = FALSE)
+BLOSUM_MAT <- as.matrix(BLOSUM_MAT)
 
 # WAG, derived from https://www.ebi.ac.uk/goldman-srv/WAG/:
-wag_mat <- read.csv("data/internal/distance_matrices/wag.csv")
-rownames(wag_mat) <- colnames(wag_mat)
-wag_mat <- as.matrix(wag_mat)
-diag(wag_mat) <- 0
-wag_mat <- forceSymmetric(wag_mat, uplo = "L")
-wag_mat <- as.matrix(wag_mat)
+WAG_MAT <- read.csv("data/internal/distance_matrices/wag.csv")
+rownames(WAG_MAT) <- colnames(WAG_MAT)
+WAG_MAT <- as.matrix(WAG_MAT)
+diag(WAG_MAT) <- 0
+WAG_MAT <- forceSymmetric(WAG_MAT, uplo = "L")
+WAG_MAT <- as.matrix(WAG_MAT)
 
 
 # EX, derived from PMID:PMC1449787's supplement:
-experimental_mat <- read.csv("data/internal/distance_matrices/experimental_exchangeability.csv", 
+EXPERIMENTAL_MAT <- read.csv("data/internal/distance_matrices/experimental_exchangeability.csv", 
                              row.names = 1, na.strings = ".")
-experimental_mat <- as.matrix(experimental_mat)
-diag(experimental_mat) <- 1
-experimental_mat <- 1 - experimental_mat # convert to distance (original measures "exchangeability")
+EXPERIMENTAL_MAT <- as.matrix(EXPERIMENTAL_MAT)
+diag(EXPERIMENTAL_MAT) <- 1
+EXPERIMENTAL_MAT <- 1 - EXPERIMENTAL_MAT # convert to distance (original measures "exchangeability")
 
 
 
 # ---- Functions ----------------------------------------------------------------------------------
+#' INTERNAL: Check for and warn about unknown characters
+.check_alignment <- function(alignment, type, matrices = list(grantham = GRANTHAM_MAT,
+                                                              blosum = BLOSUM_MAT,
+                                                              wag = WAG_MAT,
+                                                              experimental = EXPERIMENTAL_MAT)) {
+  type <- match.arg(type)
+  distance_matrix <- matrices[[type]]
+  alignment_chars <- unique(unlist(alignment))
+  alignment_chars <- alignment_chars[alignment_chars != "-"]
+  unknown_chars <- alignment_chars[!alignment_chars %in% colnames(distance_matrix)]
+  
+  if (length(unknown_chars) > 0)
+    warning(sprintf("Amino acid(s) not found in %s distance matrix will be ignored: %s", 
+                    type, 
+                    paste(unknown_chars, collapse = ", ")))
+}
+
+
 #' Retrieve a distance score for a single site.
 #' 
 #' @param aa1: the wild-type or origin amino acid
@@ -41,6 +59,8 @@ experimental_mat <- 1 - experimental_mat # convert to distance (original measure
 #' @param type: type of distance (see Details)
 #' @param symmetric: should scores be symmetric (see details)?
 #' @param ignore_gaps: should gaps be treated as missing data?
+#' @param check: should input amino acids be checked for validity?
+#' @param matrices: list of lookup matrixes specifying distances between all bases
 #' @output double
 #' 
 #' @details
@@ -64,23 +84,24 @@ experimental_mat <- 1 - experimental_mat # convert to distance (original measure
 #' which case the returned result is again NA).
 #' 
 get_site_dist <- function(aa1, aa2, type = c("grantham", "blosum", "wag", "experimental"), 
-                          symmetric = TRUE, ignore_gaps = TRUE) {
+                          symmetric = TRUE, ignore_gaps = TRUE, check = TRUE,
+                          matrices = list(grantham = GRANTHAM_MAT,
+                                          blosum = BLOSUM_MAT,
+                                          wag = WAG_MAT,
+                                          experimental = EXPERIMENTAL_MAT)) {
   if (!nchar(aa1) == 1 & nchar(aa2) == 1)
     stop("Single amino acid character expected")
   
   type <- match.arg(type)
+  distance_matrix <- matrices[[type]]
   
   if (ignore_gaps & "-" %in% c(aa1, aa2))
     return(NA_real_)
   
-  distance_matrix <- switch(type,
-                            grantham = grantham_mat,
-                            blosum = blosum_mat,
-                            wag = wag_mat,
-                            experimental = experimental_mat)
-  
   if (!aa1 %in% colnames(distance_matrix) | !aa2 %in% rownames(distance_matrix)) {
-    warning("Amino acid not found in distance matrix, returing NA")
+    if (check)
+      .check_alignment(c(aa1, aa2), type = type, matrices = matrices)
+    
     return(NA_real_)
   }
   
@@ -100,15 +121,21 @@ get_site_dist <- function(aa1, aa2, type = c("grantham", "blosum", "wag", "exper
 #' @param to: the novel/mutated sequence, as a character vector
 #' @param type: type of distance (see `get_site_dist`)
 #' @param symmetric: should scores be symmetric (see `get_site_dist`)?
+#' @param check: should input amino acids be checked for validity?
 #' @output double
 #' 
 get_sequence_distance <- function(from, to, type = c("grantham", "blosum", "wag", "experimental"),
-                                  symmetric = TRUE) {
+                                  symmetric = TRUE, check = TRUE) {
+  
+  if (check)
+    .check_alignment(list(from, to), type = type)
+  
   site_distances <- mapply(get_site_dist,
          aa1 = from,
          aa2 = to,
          MoreArgs = list(type = type,
-                         symmetric = symmetric))
+                         symmetric = symmetric,
+                         check = FALSE))
   
   sum(site_distances, na.rm = TRUE)
 }
@@ -119,19 +146,27 @@ get_sequence_distance <- function(from, to, type = c("grantham", "blosum", "wag"
 #' @param alignment: list of character vectors representing an alignment (as produced by 
 #'                   e.g. `seqinr::read_fasta()`)
 #' @param type: type of distance (see `get_site_dist`)
+#' @param cores: number of parallel cores to use
+#' @param check: should input amino acids be checked for validity?
 #' @output a symmetric n x n distance matrix
 #' 
 #' @details 
 #'
-get_all_distances <- function(alignment, type = c("grantham", "blosum", "wag", "experimental")) {
+get_all_distances <- function(alignment, type = c("grantham", "blosum", "wag", "experimental"), 
+                              cores = 1, check = TRUE) {
+  if (check)
+    .check_alignment(alignment, type = type)
+  
   all_combinations <- expand.grid(names(alignment), names(alignment), stringsAsFactors = FALSE)
   
-  dist_vec <- mapply(get_sequence_distance, 
-                     from = alignment[all_combinations[, 1]],
-                     to = alignment[all_combinations[, 2]],
-                     MoreArgs = list(type = type,
-                                     symmetric = TRUE),
-                     USE.NAMES = FALSE)
+  dist_vec <- mcmapply(get_sequence_distance, 
+                       from = alignment[all_combinations[, 1]],
+                       to = alignment[all_combinations[, 2]],
+                       MoreArgs = list(type = type,
+                                       symmetric = TRUE,
+                                       check = FALSE),
+                       USE.NAMES = FALSE, 
+                       mc.cores = cores)
   
   dist_mat <- matrix(dist_vec, nrow = length(alignment))
   colnames(dist_mat) <- rownames(dist_mat) <- names(alignment)
