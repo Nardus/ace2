@@ -1,0 +1,68 @@
+## Calculate features from ACE2 protein sequences
+## - Only features constant across all training sets calculated here, for the rest, see 
+##   'feature_calc_utils.R'
+
+library(dplyr)
+library(tidyr)
+library(readr)
+library(seqinr)
+
+source("scripts/utils/aa_distance_utils.R")
+
+# ---- Load sequences + metadata ------------------------------------------------------------------
+ace2_alignment <- read.fasta("data/calculated/ace2_protein_alignment.fasta", seqtype = "AA")
+infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
+
+stopifnot(all(infection_data$ace2_accession %in% names(ace2_alignment)))
+
+
+# ---- Pairwise distances -------------------------------------------------------------------------
+grantham_dists <- get_all_distances(ace2_alignment, type = "grantham", cores = 4)
+
+dist_data <- tibble(ace2_accession = rownames(grantham_dists),
+                    data.frame(grantham_dists)) %>% 
+  pivot_longer(-.data$ace2_accession, names_to = "other_seq", values_to = "distance")
+
+
+
+# ---- Distance to humans -------------------------------------------------------------------------
+dist_to_humans <- dist_data %>% 
+  left_join(infection_data, by = c("other_seq" = "ace2_accession")) %>% 
+  filter(.data$species == "Homo sapiens") %>% 
+  select(.data$ace2_accession,
+         distance_to_humans = .data$distance)
+
+
+# ---- Variable sites (categorical) ---------------------------------------------------------------
+# To find variable sites, compare all characters except X
+# Gaps are considered another character class IF is is internal (i.e. a deletion). At the edges of
+# a sequence, "-" is actually missing data
+replace_external_gap_chars <- function(x) {
+  seq_starts <- min(which(x != "-"))
+  seq_ends <- max(which(x != "-"))
+  
+  new_seq <- rep(NA_character_, length(x))
+  new_seq[seq_starts:seq_ends] <- x[seq_starts:seq_ends]
+  
+  new_seq
+}
+
+alignment_mat <- ace2_alignment %>% 
+  bind_cols() %>%                   # Each sequence is a column, rows represent alignment positions
+  mutate(across(everything(), replace_external_gap_chars),
+         across(everything(), ~ if_else(.x == "X", NA_character_, .x))) %>% 
+  
+  t()                               # Rotate: each row now a sequence
+
+variant_counts <- apply(alignment_mat, MARGIN = 2, FUN = n_distinct, na.rm = TRUE)
+colnames(alignment_mat) <- as.character(seq(1, ncol(alignment_mat)))
+
+variable_sites <- alignment_mat[, variant_counts > 1] %>% 
+  as_tibble(rownames = "ace2_accession", .name_repair = ~ paste0("variable_site_", .x))
+
+
+
+# ---- Output ---------------------------------------------------------------
+write_rds(dist_data, "data/calculated/features_pairwise_dists.rds")
+write_rds(dist_to_humans, "data/calculated/features_dist_to_humans.rds")
+write_rds(variable_sites, "data/calculated/features_variable_sites.rds")

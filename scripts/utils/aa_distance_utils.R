@@ -35,14 +35,21 @@ EXPERIMENTAL_MAT <- 1 - EXPERIMENTAL_MAT # convert to distance (original measure
 
 # ---- Functions ----------------------------------------------------------------------------------
 #' INTERNAL: Check for and warn about unknown characters
-.check_alignment <- function(alignment, type, matrices = list(grantham = GRANTHAM_MAT,
-                                                              blosum = BLOSUM_MAT,
-                                                              wag = WAG_MAT,
-                                                              experimental = EXPERIMENTAL_MAT)) {
+.check_alignment <- function(alignment, type = c("grantham", "blosum", "wag", "experimental"), 
+                             ignore_na = FALSE,
+                             matrices = list(grantham = GRANTHAM_MAT,
+                                             blosum = BLOSUM_MAT,
+                                             wag = WAG_MAT,
+                                             experimental = EXPERIMENTAL_MAT)) {
   type <- match.arg(type)
   distance_matrix <- matrices[[type]]
   alignment_chars <- unique(unlist(alignment))
   alignment_chars <- alignment_chars[alignment_chars != "-"]
+  
+  if (ignore_na)
+    alignment_chars <- alignment_chars[!is.na(alignment_chars)]
+  
+  
   unknown_chars <- alignment_chars[!alignment_chars %in% colnames(distance_matrix)]
   
   if (length(unknown_chars) > 0)
@@ -60,6 +67,7 @@ EXPERIMENTAL_MAT <- 1 - EXPERIMENTAL_MAT # convert to distance (original measure
 #' @param symmetric: should scores be symmetric (see details)?
 #' @param ignore_gaps: should gaps be treated as missing data?
 #' @param check: should input amino acids be checked for validity?
+#' @param ignore_na: when checking amino acids, should NA's generate a warning?
 #' @param matrices: list of lookup matrixes specifying distances between all bases
 #' @output double
 #' 
@@ -84,7 +92,7 @@ EXPERIMENTAL_MAT <- 1 - EXPERIMENTAL_MAT # convert to distance (original measure
 #' which case the returned result is again NA).
 #' 
 get_site_dist <- function(aa1, aa2, type = c("grantham", "blosum", "wag", "experimental"), 
-                          symmetric = TRUE, ignore_gaps = TRUE, check = TRUE,
+                          symmetric = TRUE, ignore_gaps = TRUE, check = TRUE, ignore_na = FALSE,
                           matrices = list(grantham = GRANTHAM_MAT,
                                           blosum = BLOSUM_MAT,
                                           wag = WAG_MAT,
@@ -100,7 +108,7 @@ get_site_dist <- function(aa1, aa2, type = c("grantham", "blosum", "wag", "exper
   
   if (!aa1 %in% colnames(distance_matrix) | !aa2 %in% rownames(distance_matrix)) {
     if (check)
-      .check_alignment(c(aa1, aa2), type = type, matrices = matrices)
+      .check_alignment(c(aa1, aa2), type = type, matrices = matrices, ignore_na = ignore_na)
     
     return(NA_real_)
   }
