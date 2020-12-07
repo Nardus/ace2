@@ -62,7 +62,7 @@ variable_sites <- alignment_mat[, variant_counts > 1] %>%
 
 
 
-# ---- Output ---------------------------------------------------------------
+# ---- Output -------------------------------------------------------------------------------------
 write_rds(dist_data, "data/calculated/features_pairwise_dists.rds")
 write_rds(dist_to_humans, "data/calculated/features_dist_to_humans.rds")
 write_rds(variable_sites, "data/calculated/features_variable_sites.rds")

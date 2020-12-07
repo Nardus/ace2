@@ -97,8 +97,16 @@ get_site_dist <- function(aa1, aa2, type = c("grantham", "blosum", "wag", "exper
                                           blosum = BLOSUM_MAT,
                                           wag = WAG_MAT,
                                           experimental = EXPERIMENTAL_MAT)) {
-  if (!nchar(aa1) == 1 & nchar(aa2) == 1)
-    stop("Single amino acid character expected")
+  if (length(aa1) > 1 | length(aa2) > 1)
+    stop("This function is not vectorised - use get_site_dist_vectorised()")
+  
+  if (!is.na(aa1))
+    if (!nchar(aa1) == 1)
+      stop("Single amino acid character expected")
+  
+  if (!is.na(aa2))
+    if (!nchar(aa2) == 1)
+      stop("Single amino acid character expected")
   
   type <- match.arg(type)
   distance_matrix <- matrices[[type]]
@@ -120,6 +128,13 @@ get_site_dist <- function(aa1, aa2, type = c("grantham", "blosum", "wag", "exper
   }
     
   as.double(distance_matrix[aa1, aa2])
+}
+
+
+#' Vectorised version of get_site_dist
+get_site_dist_vectorised <- function(aa1, aa2, ...) {
+  mapply(get_site_dist, aa1 = aa1, aa2 = aa2,
+         MoreArgs = list(...), USE.NAMES = FALSE)
 }
 
 

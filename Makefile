@@ -25,3 +25,8 @@ data/calculated/features_pairwise_dists.rds: data/calculated/ace2_protein_alignm
                                              data/calculated/cleaned_infection_data.rds
 	Rscript scripts/calculate_features.R
 
+
+# Train models
+output/infection/training_results.rds: data/calculated/cleaned_infection_data.rds \
+                                       data/calculated/features_pairwise_dists.rds
+	Rscript scripts/train_infection_models.R

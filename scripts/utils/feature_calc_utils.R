@@ -70,8 +70,8 @@ get_consensus_dist <- function(variable_sites_training, variable_sites_all, infe
     pivot_longer(starts_with("variable_site"), names_to = "site", values_to = "observed") %>% 
     left_join(consensus_vals, by = "site") %>% 
     group_by(.data$ace2_accession, .data$site) %>% 
-    summarise(distance = get_site_dist(.data$most_common, .data$observed, 
-                                       type = "grantham", ignore_na = TRUE),
+    summarise(distance = get_site_dist_vectorised(.data$most_common, .data$observed, 
+                                                  type = "grantham", ignore_na = TRUE),
               .groups = "drop") %>% 
     pivot_wider(id_cols = .data$ace2_accession, names_from = "site", values_from = "distance", 
                 names_prefix = "dist_")
