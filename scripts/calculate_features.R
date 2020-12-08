@@ -11,9 +11,17 @@ source("scripts/utils/aa_distance_utils.R")
 
 # ---- Load sequences + metadata ------------------------------------------------------------------
 ace2_alignment <- read.fasta("data/calculated/ace2_protein_alignment.fasta", seqtype = "AA")
-infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
 
-stopifnot(all(infection_data$ace2_accession %in% names(ace2_alignment)))
+infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
+shedding_data <- read_rds("data/calculated/cleaned_shedding_data.rds")
+transmission_data <- read_rds("data/calculated/cleaned_transmission_data.rds")
+
+sequence_metadata <- infection_data %>% 
+  full_join(shedding_data, by = c("species", "ace2_accession")) %>% 
+  full_join(transmission_data, by = c("species", "ace2_accession")) %>% 
+  select(.data$species, .data$ace2_accession)
+
+stopifnot(all(sequence_metadata$ace2_accession %in% names(ace2_alignment)))
 
 
 # ---- Pairwise distances -------------------------------------------------------------------------
@@ -27,7 +35,7 @@ dist_data <- tibble(ace2_accession = rownames(grantham_dists),
 
 # ---- Distance to humans -------------------------------------------------------------------------
 dist_to_humans <- dist_data %>% 
-  left_join(infection_data, by = c("other_seq" = "ace2_accession")) %>% 
+  left_join(sequence_metadata, by = c("other_seq" = "ace2_accession")) %>% 
   filter(.data$species == "Homo sapiens") %>% 
   select(.data$ace2_accession,
          distance_to_humans = .data$distance)

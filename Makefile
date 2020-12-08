@@ -27,6 +27,13 @@ data/calculated/features_pairwise_dists.rds: data/calculated/ace2_protein_alignm
 
 
 # Train models
-output/infection/training_results.rds: data/calculated/cleaned_infection_data.rds \
-                                       data/calculated/features_pairwise_dists.rds
-	Rscript scripts/train_infection_models.R
+output/%/training_results.rds: data/calculated/cleaned_infection_data.rds \
+                               data/calculated/features_pairwise_dists.rds
+	Rscript scripts/train_models.R $*
+
+
+# Plotting
+output/plots/performance.png: output/infection/training_results.rds \
+                              output/shedding/training_results.rds \
+							  output/transmission/training_results.rds
+	Rscript scripts/plotting/plot_performance.R

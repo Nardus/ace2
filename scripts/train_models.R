@@ -1,5 +1,22 @@
 ## Train models to predict susceptibility to sarbecovirus infection
 
+# ---- Input args ---------------------------------------------------------------------------------
+# Takes one argument, specifying the dataset
+dataset_name = commandArgs(trailingOnly = TRUE)
+
+if (length(dataset_name) != 1 | !(dataset_name %in% c("infection", "shedding", "transmission")))
+  stop(paste("A single argument specifying the dataset to predict is required", 
+             "(either 'infection', 'shedding', or 'transmission')"), 
+       call. = FALSE)
+
+metadata_path <- sprintf("data/calculated/cleaned_%s_data.rds", dataset_name)
+response <- switch(dataset_name,
+                   "infection" = "infected",
+                   "shedding" = "shedding",
+                   "transmission" = "transmission")
+
+
+# ---- Setup --------------------------------------------------------------------------------------
 library(dplyr)
 library(tidyr)
 library(readr)
@@ -34,7 +51,7 @@ TUNING_PARAMETERS <- list(eta = c(0.001, 0.005, seq(0.01, 0.2, by = 0.02)),
                           subsample = seq(0.6, 1.0, by = 0.1),
                           colsample_bytree = seq(0.5, 1.0, by = 0.1),
                           nrounds = seq(50, 250, by = 10), # Keeping this somewhat low to prevent over-fitting
-                          min_child_weight = c(5, 6, 8, 10),
+                          min_child_weight = seq(0, 10, by = 2),
                           gamma = seq(0, 7, by = 0.5))
 
 
@@ -44,7 +61,8 @@ registerDoParallel(8)
 
 # ---- Data ---------------------------------------------------------------------------------------
 # Metadata
-infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
+metadata <- read_rds(metadata_path) %>% 
+  rename(label = all_of(response))
 
 # Feature data
 pairwise_dist_data <- read_rds("data/calculated/features_pairwise_dists.rds")
@@ -52,16 +70,23 @@ dist_to_humans <- read_rds("data/calculated/features_dist_to_humans.rds")
 variable_sites <- read_rds("data/calculated/features_variable_sites.rds")
 
 # Combine
-final_data <- infection_data %>% 
+final_data <- metadata %>% 
   left_join(dist_to_humans, by = "ace2_accession") %>% 
   left_join(variable_sites, by = "ace2_accession")
 
 
-stopifnot(nrow(final_data) == n_distinct(infection_data$species))
+stopifnot(nrow(final_data) == n_distinct(metadata$species))
+
+# Remove features which do not vary much in the current dataset:
+# - happens among "variable site" features in particular
+# - these columns will often be zero-variance once data are split, causing an error in caret
+remove_cols <- nearZeroVar(final_data)
+final_data <- final_data[, -remove_cols]
 
 
 # Output directories:
-dir.create("output/infection/xgboost_models/", recursive = TRUE)
+dir.create(sprintf("output/%s/xgboost_models/", dataset_name), 
+           recursive = TRUE)
 
 
 # ---- Training -----------------------------------------------------------------------------------
@@ -90,21 +115,21 @@ for (iteration in 1:(N_SELECTION_ROUNDS + N_ITERATIONS)) {
   # Train/test split
   # - Some species point to the same sequence: all references to a given accession number should be
   #   in the same partition to avoid a data leak
-  train_index <- createDataPartition(final_data$infected, p = 0.7, times = 1)[[1]]
+  train_index <- createDataPartition(final_data$label, p = 0.7, times = 1)[[1]]
   train_accessions <- unique(final_data$ace2_accession[train_index])
   
   
   # Calculate additional (training set-specific) features
-  closest_infectable <- pairwise_dist_data %>% 
+  closest_positive <- pairwise_dist_data %>% 
     filter(.data$other_seq %in% train_accessions) %>% 
-    get_dist_to_closest_infectable(infection_data)
+    get_dist_to_closest_positive(metadata)
   
   consensus_dists <- variable_sites %>% 
     filter(.data$ace2_accession %in% train_accessions) %>% 
-    get_consensus_dist(variable_sites, infection_data)
+    get_consensus_dist(variable_sites, metadata)
   
   iteration_data <- final_data %>% 
-    left_join(closest_infectable, by = "ace2_accession") %>% 
+    left_join(closest_positive, by = "ace2_accession") %>% 
     left_join(consensus_dists, by = "ace2_accession") %>% 
     mutate(across(where(is.character), as.factor))
   
@@ -130,7 +155,7 @@ for (iteration in 1:(N_SELECTION_ROUNDS + N_ITERATIONS)) {
   if (iteration > N_SELECTION_ROUNDS) {
     # A training round, so reduce number of features
     iteration_data <- iteration_data %>% 
-      select(.data$species, .data$ace2_accession, .data$evidence_level, .data$infected,
+      select(.data$species, .data$ace2_accession, .data$evidence_level, .data$label,
              all_of(final_features))
   }
   
@@ -138,15 +163,12 @@ for (iteration in 1:(N_SELECTION_ROUNDS + N_ITERATIONS)) {
   # Split and prepare data
   training_data <- iteration_data %>% 
     filter(.data$ace2_accession %in% train_accessions) %>% 
-    as.data.frame() %>% 
-    mutate(infected = if_else(.data$infected, "True", "False"),
-           infected = factor(.data$infected, levels = c("True", "False"))) # Caret's twoClassSummary treats level 1 as "TRUE"
+    mutate(label = factor(.data$label, levels = c("True", "False"))) %>%  # Caret's twoClassSummary treats level 1 as "TRUE"
+    as.data.frame()
   
   test_data <- iteration_data %>% 
     filter(!.data$ace2_accession %in% train_accessions) %>%
-    as.data.frame() %>% 
-    mutate(infected = if_else(.data$infected, "True", "False"),
-           infected = factor(.data$infected, levels = c("True", "False")))
+    as.data.frame()
   
   
   # Train
@@ -157,7 +179,7 @@ for (iteration in 1:(N_SELECTION_ROUNDS + N_ITERATIONS)) {
   train_data_fo <- training_data %>% 
     select(-.data$species, -.data$ace2_accession, -.data$evidence_level) # Remove non-feature columns
   
-  trained_model <- train(infected ~ ., 
+  trained_model <- train(label ~ .,
                          data = train_data_fo,
                          method = "xgbTree",
                          metric = "ROC",
@@ -181,12 +203,12 @@ for (iteration in 1:(N_SELECTION_ROUNDS + N_ITERATIONS)) {
     train_preds <- record_predictions(trained_model, training_data, 
                                       data_name = "train", 
                                       iteration = iteration,
-                                      data_cols = c("species", "ace2_accession", "infected", "evidence_level"))
+                                      data_cols = c("species", "ace2_accession", "label", "evidence_level"))
     
     test_preds <- record_predictions(trained_model, test_data, 
                                      data_name = "test", 
                                      iteration = iteration,
-                                     data_cols = c("species", "ace2_accession", "infected", "evidence_level"))
+                                     data_cols = c("species", "ace2_accession", "label", "evidence_level"))
     
     predictions <- rbind(predictions, train_preds, test_preds)
     
@@ -198,7 +220,8 @@ for (iteration in 1:(N_SELECTION_ROUNDS + N_ITERATIONS)) {
                                                         test_data = test_data)
     
     # Save binary version of the current model, compatible with future xgboost releases:
-    xgb.save(trained_model$finalModel, sprintf("output/infection/xgboost_models/%i.model", iteration))
+    xgb.save(trained_model$finalModel, sprintf("output/%s/xgboost_models/%i.model", 
+                                               dataset_name, iteration))
   }
 }
 
@@ -207,7 +230,7 @@ message("\nDone\n")
 
 
 # ---- Output -------------------------------------------------------------------------------------
-write_rds(predictions, "output/infection/predictions.rds")
+write_rds(predictions, sprintf("output/%s/predictions.rds", dataset_name))
 
-write_rds(training_results, "output/infection/training_results.rds", 
+write_rds(training_results, sprintf("output/%s/training_results.rds", dataset_name), 
           compress = "gz", compression = 9)
