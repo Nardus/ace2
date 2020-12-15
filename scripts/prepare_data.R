@@ -103,7 +103,7 @@ shedding_data <- metadata %>%
   group_by(.data$species, .data$ace2_accession) %>% 
   summarise(evidence_level = if_else(any(.data$shedding),
                                      min(c(100L, .data$evidence_level[.data$shedding])),
-                                     min(.data$shedding)),
+                                     min(.data$evidence_level)),
             shedding = any(.data$shedding),
             .groups = "drop")
 
@@ -118,7 +118,7 @@ transmission_data <- metadata %>%
   group_by(.data$species, .data$ace2_accession) %>% 
   summarise(evidence_level = if_else(any(.data$transmission),
                                      min(c(100L, .data$evidence_level[.data$transmission])),
-                                     min(.data$transmission)),
+                                     min(.data$evidence_level)),
             transmission = any(.data$transmission),
             .groups = "drop")
 
