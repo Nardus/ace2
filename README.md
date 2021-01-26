@@ -1,4 +1,4 @@
-# Prediction of hosts susceptible to SARS-CoV infection
+# Prediction of hosts susceptible to SARS-CoV infection using ACE2 protein sequences
 
 ## Usage
 ```
