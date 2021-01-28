@@ -182,8 +182,8 @@ trained_model <- train(label ~ .,
                        nthread = 1)
 
 # Correct predictions
-# - Caret uses a hard-coded cutoff of 0.5, but that's far from optimal
-cutoff <- sum(final_data$label == "True")/nrow(final_data)
+# TODO: may need to be optimized
+cutoff <- 0.5 
 
 predictions <- trained_model$pred %>% 
   mutate(pred = if_else(.data$True > cutoff, "True", "False"))

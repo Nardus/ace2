@@ -48,7 +48,7 @@ p_auc <- ggplot(aucs, aes(x = run_id, y = auc, fill = run_id)) +
   geom_col(colour = "grey20") +
   geom_text(aes(label = n), nudge_y = 0.04, size = 2) +
   geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
-  labs(x = "response") +
+  labs(x = "feature set") +
   ylim(c(0, 1)) +
   facet_grid(rows = vars(response_var)) +
   guides(fill = FALSE) +
