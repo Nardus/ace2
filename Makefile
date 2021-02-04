@@ -35,48 +35,79 @@ data/calculated/features_pairwise_dists.rds: data/calculated/ace2_protein_alignm
 
 # ---- Training ------------------------------------------------------------------------------------
 # Output format is "dataset/response_var/feature_set/*"
+# TODO: not currently distinguishing by dataset (below should be "all_data")
 
 TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 						data/calculated/features_pairwise_dists.rds
 
-# Feature sets:
+# Try different feature sets:
 # - Categorical AA representation
-output/%/aa_categorical/training_results.rds: $(TRAINING_REQUIREMENTS)
-	Rscript scripts/train_models.R $* "$(@D)" --aa_categorical --random_seed 21451233
+output/all_data/%/aa_categorical/training_results.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) --aa_categorical --random_seed 21451233
 
 # - Distance AA representation
-output/%/aa_distance/training_results.rds: $(TRAINING_REQUIREMENTS)
-	Rscript scripts/train_models.R $* "$(@D)" --aa_distance --random_seed 58371313
+output/all_data/%/aa_distance/training_results.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) --aa_distance --random_seed 58371313
 
 # - Distance to humans
-output/%/distance_to_humans/training_results.rds: $(TRAINING_REQUIREMENTS)
-	Rscript scripts/train_models.R $* "$(@D)" --distance_to_humans --random_seed 42943872
+output/all_data/%/distance_to_humans/training_results.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) --distance_to_humans --random_seed 42943872
 
 # - Binding affinity
-output/%/binding_affinity/training_results.rds: $(TRAINING_REQUIREMENTS)
-	Rscript scripts/train_models.R $* "$(@D)" --binding_affinity --random_seed 83720341
+output/all_data/%/binding_affinity/training_results.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) --binding_affinity --random_seed 83720341
 
 # - Combined
-output/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
-	Rscript scripts/train_models.R $* "$(@D)" \
+#   TODO: add --binding_affinity
+output/all_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
 		--aa_categorical --aa_distance --distance_to_humans \
-		--binding_affinity --binding_affinity \
 		--random_seed 73049274
 
 
+# Full model on data from each evidence level:
+#  (note that level 1 [natural infection observed] has no negative data, so 
+#  can't be included here)
+#   TODO: add --binding_affinity to all of these
+
+# - Level 2 (experimental infection)
+output/l2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_categorical --aa_distance --distance_to_humans \
+		--evidence_min 2 --evidence_max 2 \
+		--random_seed 23556284
+
+# - Level 2 (experimental infection)
+output/l3_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_categorical --aa_distance --distance_to_humans \
+		--evidence_min 3 --evidence_max 3 \
+		--random_seed 43564215
+
+
 # Enumerate combinations:
-FEATURE_SETS = aa_categorical aa_distance distance_to_humans #binding_affinity combined
-INFECTION_MODELS = $(patsubst %, output/infection/%/training_results.rds, $(FEATURE_SETS))
-SHEDDING_MODELS = $(patsubst %, output/shedding/%/training_results.rds, $(FEATURE_SETS))
-TRANSMISSION_MODELS = $(patsubst %, output/transmission/%/training_results.rds, $(FEATURE_SETS))
+# - Feature set models (on all_data only)
+RESPONSE_VARS = {"infection/","shedding/","transmission/"}
+FEATURE_SETS = {"aa_categorical","aa_distance","distance_to_humans","combined"} # TODO: binding_affinity 
+
+OUT_FOLDERS_1 = $(shell echo $(RESPONSE_VARS)$(FEATURE_SETS))
+FEATURE_MODELS = $(patsubst %, output/all_data/%/training_results.rds, $(OUT_FOLDERS_1))
+
+# - Evidence level models (on combined model only)
+DATASETS = {"l2_data/","l3_data/"}
+
+OUT_FOLDERS_2 = $(shell echo $(DATASETS)$(RESPONSE_VARS))
+EVIDENCE_MODELS = $(patsubst %, output/%combined/training_results.rds, $(OUT_FOLDERS_2))
+
 
 .PHONY: train
-train: $(INFECTION_MODELS) $(SHEDDING_MODELS) $(TRANSMISSION_MODELS)
+train: $(FEATURE_MODELS) $(EVIDENCE_MODELS)
 
 
 
 # ---- Plots ---------------------------------------------------------------------------------------
-output/plots/performance.png: output/infection/training_results.rds \
-                              output/shedding/training_results.rds \
-							  output/transmission/training_results.rds
+output/plots/performance.png: $(FEATURE_MODELS)
 	Rscript scripts/plotting/plot_performance.R
+	
+.PHONY: plots
+plots: output/plots/performance.png

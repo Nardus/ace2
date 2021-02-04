@@ -73,12 +73,23 @@ base_columns <- c(base_columns, "evidence_level")
 # - Conflicting evidence from less reliable evidence levels are ignored if evidence is already 
 #   known from a more reliable level. Similarly, conflicting evidence from the same level will be 
 #   ignored, so we are simply asking "has it _ever_ been reported to be infected?"
+
+# Summarise evidence levels supporting the fact that response_var takes on a given focal_value:
+summarise_evidence <- function(evidence_levels, response_var, focal_value) {
+   evidence_levels[response_var == focal_value] %>% 
+    unique() %>% 
+    sort() %>% 
+    paste(collapse = ",")
+}
+
 infection_data <- metadata %>% 
   select(all_of(base_columns), .data$infected) %>% 
   distinct() %>% 
   
   group_by(.data$species, .data$ace2_accession) %>% 
-  summarise(evidence_level = if_else(any(.data$infected),
+  summarise(all_evidence_true = summarise_evidence(.data$evidence_level, .data$infected, TRUE),
+            all_evidence_false = summarise_evidence(.data$evidence_level, .data$infected, FALSE),
+            evidence_level = if_else(any(.data$infected),
                                      min(c(100L, .data$evidence_level[.data$infected])),  # 100L prevents warnings when all(.data$infected) == FALSE
                                      min(.data$evidence_level)),
             infected = any(.data$infected),
@@ -101,7 +112,9 @@ shedding_data <- metadata %>%
   filter(!is.na(.data$shedding)) %>% 
   distinct() %>% 
   group_by(.data$species, .data$ace2_accession) %>% 
-  summarise(evidence_level = if_else(any(.data$shedding),
+  summarise(all_evidence_true = summarise_evidence(.data$evidence_level, .data$shedding, TRUE),
+            all_evidence_false = summarise_evidence(.data$evidence_level, .data$shedding, FALSE),
+            evidence_level = if_else(any(.data$shedding),
                                      min(c(100L, .data$evidence_level[.data$shedding])),
                                      min(.data$evidence_level)),
             shedding = any(.data$shedding),
@@ -116,7 +129,9 @@ transmission_data <- metadata %>%
   filter(!is.na(.data$transmission)) %>% 
   distinct() %>% 
   group_by(.data$species, .data$ace2_accession) %>% 
-  summarise(evidence_level = if_else(any(.data$transmission),
+  summarise(all_evidence_true = summarise_evidence(.data$evidence_level, .data$transmission, TRUE),
+            all_evidence_false = summarise_evidence(.data$evidence_level, .data$transmission, FALSE),
+            evidence_level = if_else(any(.data$transmission),
                                      min(c(100L, .data$evidence_level[.data$transmission])),
                                      min(.data$evidence_level)),
             transmission = any(.data$transmission),

@@ -30,10 +30,13 @@ features_group$add_argument("--binding_affinity", action = "store_const", const 
 
 
 data_group <- parser$add_argument_group("Dataset options")
-data_group$add_argument("--max_evidence_level", type = "integer", choices = 1L:4L, default = 4L,
-                        help = paste("data to include. Higher numbers include less robust evidence:",
+data_group$add_argument("--evidence_min", type = "integer", choices = 1L:4L, default = 1L,
+                        help = paste("lowest evidence level to include. Higher numbers include less robust evidence:",
                                      "1 = natural infection, 2 = experimental infection, 3 = cell culture",
-                                     "4 = cells modified to express ACE2 (default = 4)."))
+                                     "4 = cells modified to express ACE2 (default = 1)."))
+
+data_group$add_argument("--evidence_max", type = "integer", choices = 1L:4L, default = 4L,
+                        help = "maximum evidence level to include (default = 4).")
 
 
 other_opts_group <- parser$add_argument_group("Other options")
@@ -114,6 +117,37 @@ registerDoParallel(INPUT$n_threads)
 metadata <- read_rds(metadata_path) %>% 
   rename(label = all_of(response))
 
+# Filter evidence levels
+# - If filtering, also need to adjust the response variable to match the best (lowest) evidence
+#   level available
+# - Note: the which.min() step below:
+#     - accurately handles NA's (caused by empty evidence string)
+#     - returns 1 (True) when there is a tie - as in "prepare_data.R", conflicting evidence is 
+#       ignored because we are simply asking "has it _ever_ been reported to be infected/shedding/etc?"
+if (!(INPUT$evidence_min == 1 & INPUT$evidence_max == 4)) {
+  removed_levels <- c(seq(0, (INPUT$evidence_min - 1)),
+                      seq((INPUT$evidence_max + 1), 5))
+  removed_levels <- paste(removed_levels, collapse = "|")
+  
+  metadata <- metadata %>% 
+    mutate(all_evidence_true = str_remove_all(.data$all_evidence_true, removed_levels),
+           all_evidence_false = str_remove_all(.data$all_evidence_false, removed_levels),
+           all_evidence_true = str_remove(.data$all_evidence_true, "^,*"),
+           all_evidence_false = str_remove(.data$all_evidence_false, "^,*")) %>% 
+    filter(!(.data$all_evidence_true == "" & .data$all_evidence_false == "")) %>% 
+    
+    group_by(.data$species) %>% 
+    mutate(evidence_true = substring(.data$all_evidence_true, 1, 1),  # Levels sorted, so this gets the lowest remaining evidence level
+           evidence_false = substring(.data$all_evidence_false, 1, 1),
+           new_response = which.min(c(.data$evidence_true, .data$evidence_false)),
+           label = c("True", "False")[.data$new_response],
+           evidence_level = c(.data$evidence_true, .data$evidence_false)[.data$new_response],
+           evidence_level = as.integer(.data$evidence_level)) %>% 
+    ungroup() %>% 
+    select(-.data$evidence_true, -.data$evidence_false, -.data$new_response)
+}
+
+
 # Feature data
 pairwise_dist_data <- read_rds("data/calculated/features_pairwise_dists.rds")
 dist_to_humans <- read_rds("data/calculated/features_dist_to_humans.rds")
@@ -130,8 +164,10 @@ stopifnot(nrow(final_data) == n_distinct(metadata$species))
 # Remove features which do not vary much in the current dataset:
 # - happens among "variable site" features in particular
 # - these columns will often be zero-variance once data are split, causing an error in caret
-remove_cols <- nearZeroVar(final_data)
-final_data <- final_data[, -remove_cols]
+remove_cols <- nearZeroVar(final_data, names = TRUE)
+remove_cols <- remove_cols[!remove_cols %in% c("evidence_level", "all_evidence_true", "all_evidence_false")]
+final_data <- final_data %>% 
+  select(-all_of(remove_cols))
 
 
 # ---- Training -----------------------------------------------------------------------------------
@@ -156,8 +192,7 @@ final_data <- final_data %>%
 final_data <- final_data %>% 
   mutate(across(where(is.character), as.factor)) %>% 
   select(.data$species, .data$ace2_accession, .data$evidence_level, .data$label,
-         starts_with(feature_prefixes)) %>% 
-  filter(.data$evidence_level <= INPUT$max_evidence_level)
+         starts_with(feature_prefixes))
   
 # Prepare data for caret
 final_data <- final_data %>% 
