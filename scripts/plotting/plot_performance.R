@@ -61,13 +61,13 @@ aucs <- test_preds %>%
   
 p_auc <- ggplot(aucs, aes(x = run_id, y = auc, fill = run_id)) +
   geom_col(colour = "grey20") +
-  geom_text(aes(label = n), nudge_y = 0.04, size = 2) +
+  geom_text(aes(label = n), nudge_y = 0.04, size = 1) +
   geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
   labs(x = "feature set") +
   ylim(c(0, 1)) +
   facet_grid(cols = vars(dataset), rows = vars(response_var), scales = "free_x", space = "free_x") +
   guides(fill = FALSE) +
-  theme_bw() +
+  theme_bw(base_size = 9) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 
@@ -89,12 +89,12 @@ label_data <- accuracies %>%
 
 p_accuracy <- ggplot(accuracies, aes(x = factor(evidence_level), y = accuracy)) +
   geom_col(aes(fill = run_id), colour = "grey20", position = "dodge") +
-  geom_text(aes(label = n), nudge_y = 0.15, size = 2, data = label_data) +
+  geom_text(aes(label = n), nudge_y = 0.15, size = 1, data = label_data) +
   labs(x = "evidence level") +
   scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
   facet_grid(rows = vars(response_var), cols = vars(label)) +
   guides(fill = FALSE) +
-  theme_bw() +
+  theme_bw(base_size = 9) +
   ggtitle("all_data")
 
 
@@ -106,4 +106,4 @@ p_final <- plot_grid(p_auc, p_accuracy,
 dir.create("output/plots", recursive = TRUE)
 ggsave2("output/plots/performance.png", 
         p_final,
-        width = 7, height = 3.5)
+        width = 5, height = 3.5)

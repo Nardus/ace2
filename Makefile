@@ -77,7 +77,7 @@ output/l2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 		--evidence_min 2 --evidence_max 2 \
 		--random_seed 23556284
 
-# - Level 2 (experimental infection)
+# - Level 3 (cell culture)
 output/l3_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_categorical --aa_distance --distance_to_humans \
@@ -94,19 +94,20 @@ OUT_FOLDERS_1 = $(shell echo $(RESPONSE_VARS)$(FEATURE_SETS))
 FEATURE_MODELS = $(patsubst %, output/all_data/%/training_results.rds, $(OUT_FOLDERS_1))
 
 # - Evidence level models (on combined model only)
+#   For l3 (cell culture), shedding and transmission do not apply
 DATASETS = {"l2_data/","l3_data/"}
 
-OUT_FOLDERS_2 = $(shell echo $(DATASETS)$(RESPONSE_VARS))
-EVIDENCE_MODELS = $(patsubst %, output/%combined/training_results.rds, $(OUT_FOLDERS_2))
-
+OUT_FOLDERS_2 = $(shell echo $(RESPONSE_VARS))
+L2_MODELS = $(patsubst %, output/l2_data/%combined/training_results.rds, $(OUT_FOLDERS_2))
+L3_MODELS = output/l3_data/infection/combined/training_results.rds
 
 .PHONY: train
-train: $(FEATURE_MODELS) $(EVIDENCE_MODELS)
+train: $(FEATURE_MODELS) $(L2_MODELS) $(L3_MODELS)
 
 
 
 # ---- Plots ---------------------------------------------------------------------------------------
-output/plots/performance.png: $(FEATURE_MODELS)
+output/plots/performance.png: $(FEATURE_MODELS) $(L2_MODELS) $(L3_MODELS)
 	Rscript scripts/plotting/plot_performance.R
 	
 .PHONY: plots
