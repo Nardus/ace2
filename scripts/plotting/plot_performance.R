@@ -43,7 +43,7 @@ load_all_runs <- function(data_sub_set) {
   loaded_data
 }
 
-datasets <- c("all_data", "l2_data", "l3_data")
+datasets <- c("all_data", "l2_data", "l3_data", "l1+2_data")
 
 test_preds <- lapply(datasets, load_all_runs) %>% 
   bind_rows()
@@ -51,15 +51,15 @@ test_preds <- lapply(datasets, load_all_runs) %>%
 # TODO: clean labels for each run_id...
 
 
-# ---- AUC ----------------------------------------------------------------------------------------
-aucs <- test_preds %>% 
+# ---- Overall accuracy ---------------------------------------------------------------------------
+overall_accuracies <- test_preds %>% 
   group_by(.data$dataset, .data$response_var, .data$run_id) %>% 
   summarise(n = n(),
-            auc = auc(actual = .data$label == "True", predicted = .data$prob),
+            accuracy = sum(.data$label == .data$prediction) / n(),
             .groups = "drop") %>% 
   mutate(n = sprintf("N = %d", .data$n))
   
-p_auc <- ggplot(aucs, aes(x = run_id, y = auc, fill = run_id)) +
+p_overall <- ggplot(overall_accuracies, aes(x = run_id, y = accuracy, fill = run_id)) +
   geom_col(colour = "grey20") +
   geom_text(aes(label = n), nudge_y = 0.04, size = 1) +
   geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
@@ -67,43 +67,96 @@ p_auc <- ggplot(aucs, aes(x = run_id, y = auc, fill = run_id)) +
   ylim(c(0, 1)) +
   facet_grid(cols = vars(dataset), rows = vars(response_var), scales = "free_x", space = "free_x") +
   guides(fill = FALSE) +
-  theme_bw(base_size = 9) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+  theme_bw(base_size = 6) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  ggtitle("Overall accuracy")
 
 
-
-# ---- Accuracy by class / evidence level ---------------------------------------------------------
+# ---- Accuracy by class only ---------------------------------------------------------------------
 # Only makes sense for "all_data" runs
-accuracies <- test_preds %>% 
+class_accuracies <- test_preds %>% 
+  group_by(.data$dataset, .data$response_var, .data$run_id, .data$label) %>% 
+  summarise(n = n(),
+            accuracy = sum(.data$label == .data$prediction) / n(),
+            .groups = "drop") %>% 
+  mutate(n = sprintf("N = %d", .data$n))
+
+
+p_class <- ggplot(class_accuracies, aes(x = factor(run_id), y = accuracy, fill = label)) +
+  geom_col(colour = "grey20", position = "dodge") +
+  geom_text(aes(label = n, y = accuracy + 0.05), size = 1, position = position_dodge(width = 1)) +
+  labs(x = "feature set") +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
+  facet_grid(rows = vars(response_var), cols = vars(dataset), scales = "free_x", space = "free_x") +
+  theme_bw(base_size = 6) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  ggtitle("Accuracy by class (sensitivity/specificity)")
+
+
+# ---- Accuracy by class and evidence level ---------------------------------------------------------
+# Only makes sense for "all_data" and "l1+2" runs
+level_accuracies <- test_preds %>% 
   group_by(.data$dataset, .data$response_var, .data$run_id, .data$label, .data$evidence_level) %>% 
   summarise(n = n(),
             accuracy = sum(.data$label == .data$prediction) / n(),
             .groups = "drop") %>% 
-  mutate(n = sprintf("N = %d", .data$n)) %>% 
-  filter(.data$dataset == "all_data")
+  mutate(n = sprintf("N = %d", .data$n))
 
-label_data <- accuracies %>% 
+label_data_level <- level_accuracies %>% 
   group_by(.data$dataset, .data$response_var, .data$label, .data$evidence_level, .data$n) %>% 
-  summarise(accuracy = max(.data$accuracy), .groups = "drop") %>% 
-  filter(.data$dataset == "all_data")
+  summarise(accuracy = max(.data$accuracy), .groups = "drop")
 
-p_accuracy <- ggplot(accuracies, aes(x = factor(evidence_level), y = accuracy)) +
-  geom_col(aes(fill = run_id), colour = "grey20", position = "dodge") +
-  geom_text(aes(label = n), nudge_y = 0.15, size = 1, data = label_data) +
-  labs(x = "evidence level") +
-  scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
-  facet_grid(rows = vars(response_var), cols = vars(label)) +
-  guides(fill = FALSE) +
-  theme_bw(base_size = 9) +
-  ggtitle("all_data")
+make_level_plot <- function(data_name, acc_data = level_accuracies, lab_data = label_data_level) {
+  acc_data <- acc_data %>% 
+    filter(.data$dataset == data_name)
+  
+  lab_data <- lab_data %>% 
+    filter(.data$dataset == data_name)
+  
+  ggplot(acc_data, aes(x = factor(evidence_level), y = accuracy)) +
+    geom_col(aes(fill = run_id), colour = "grey20", position = "dodge") +
+    geom_text(aes(label = n), nudge_y = 0.15, size = 1, data = lab_data) +
+    labs(x = "evidence level") +
+    scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
+    facet_grid(rows = vars(response_var), cols = vars(label)) +
+    guides(fill = FALSE) +
+    theme_bw(base_size = 6) +
+    ggtitle(sprintf("Accuracy by evidence level (%s model)", data_name))
+}
+
+p_level_all <- make_level_plot("all_data")
+p_level_l1_2 <- make_level_plot("l1+2_data")
 
 
 # ---- Combine / save -----------------------------------------------------------------------------
-p_final <- plot_grid(p_auc, p_accuracy,
-                     ncol = 2, rel_widths = c(1, 1.5),
-                     align = "h", axis = "t")
+p_final <- plot_grid(p_overall, p_class, p_level_all, p_level_l1_2,
+                     nrow = 2, align = "h", axis = "tb")
 
 dir.create("output/plots", recursive = TRUE)
 ggsave2("output/plots/performance.png", 
         p_final,
-        width = 5, height = 3.5)
+        width = 5, height = 8)
+
+
+
+
+# ---- Stats to quote in text ---------------------------------------------------------------------
+# Does including cell culture data make the model less reliable?
+test_preds %>% 
+  filter(.data$dataset %in% c("all_data", "l1+2_data")) %>% 
+  filter(.data$response_var == "Infection") %>% 
+  filter(.data$run_id == "combined") %>% 
+  group_by(.data$dataset, .data$response_var, .data$run_id, .data$label) %>% 
+  summarise(n = n(),
+            accuracy = sum(.data$label == .data$prediction) / n(),
+            .groups = "drop")
+
+
+test_preds %>% 
+  filter(.data$dataset %in% c("all_data", "l1+2_data")) %>% 
+  filter(.data$response_var == "Infection") %>% 
+  filter(.data$run_id == "combined") %>% 
+  group_by(.data$dataset, .data$response_var, .data$run_id, .data$label, .data$evidence_level) %>% 
+  summarise(n = n(),
+            accuracy = sum(.data$label == .data$prediction) / n(),
+            .groups = "drop")
