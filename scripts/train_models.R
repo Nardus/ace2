@@ -200,7 +200,8 @@ if (!is.null(INPUT$select_features)) {
 train_setup <- trainControl(method = "LOOCV",
                             classProbs = TRUE,
                             search = "random",
-                            savePredictions = "final")
+                            savePredictions = "final",
+                            summaryFunction = twoClassSummary)
   
 # Calculate additional (training set-specific) features
 #  - These depend on the particular test set, but are correct by default for leave-one-out CV, 
@@ -244,7 +245,7 @@ parameter_combos <- lapply(TUNING_PARAMETERS, sample, size = N_HYPER_PARAMS, rep
 trained_model <- train(label ~ .,
                        data = train_data,
                        method = "xgbTree",
-                       metric = "Accuracy",
+                       metric = "ROC",
                        trControl = train_setup,
                        tuneGrid = parameter_combos,
                        na.action = na.pass,
