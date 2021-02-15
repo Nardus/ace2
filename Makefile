@@ -84,6 +84,13 @@ output/l3_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 		--evidence_min 3 --evidence_max 3 \
 		--random_seed 43564215
 
+# - Level 1 and 2 (i.e. exclude cell culture, in case it makes things worse)
+output/l1+2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_categorical --aa_distance --distance_to_humans \
+		--evidence_min 1 --evidence_max 2 \
+		--random_seed 23556284
+
 
 # Enumerate combinations:
 # - Feature set models (on all_data only)
@@ -95,15 +102,34 @@ FEATURE_MODELS = $(patsubst %, output/all_data/%/training_results.rds, $(OUT_FOL
 
 # - Evidence level models (on combined model only)
 #   For l3 (cell culture), shedding and transmission do not apply
-DATASETS = {"l2_data/","l3_data/"}
+DATASETS = {"l2_data/","l1+2_data/"}
 
-OUT_FOLDERS_2 = $(shell echo $(RESPONSE_VARS))
-L2_MODELS = $(patsubst %, output/l2_data/%combined/training_results.rds, $(OUT_FOLDERS_2))
+OUT_FOLDERS_2 = $(shell echo $(DATASETS)$(RESPONSE_VARS))
+L1_L2_MODELS = $(patsubst %, output/%combined/training_results.rds, $(OUT_FOLDERS_2))
 L3_MODELS = output/l3_data/infection/combined/training_results.rds
 
 .PHONY: train
-train: $(FEATURE_MODELS) $(L2_MODELS) $(L3_MODELS)
+train: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
 
+
+# ---- Feature selection ---------------------------------------------------------------------------
+output/all_data/%/combined/feature_usage.rds: output/all_data/%/combined/training_results.rds
+	Rscript scripts/select_features.R $(@D)
+
+
+# TODO: add binding_affinity here
+output/all_data/%/combined+feature_selection_100/training_results.rds: output/all_data/%/combined/feature_usage.rds \
+																	   $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_categorical --aa_distance --distance_to_humans \
+		--random_seed 38721019 \
+		--select_features 100 \
+		--feature_importance $<
+
+.PHONY: feature_selection
+feature_selection: output/all_data/infection/combined+feature_selection_100/training_results.rds \
+				   output/all_data/shedding/combined+feature_selection_100/training_results.rds \
+				   output/all_data/transmission/combined+feature_selection_100/training_results.rds
 
 
 # ---- Plots ---------------------------------------------------------------------------------------

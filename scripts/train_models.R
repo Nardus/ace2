@@ -40,6 +40,16 @@ data_group$add_argument("--evidence_max", type = "integer", choices = 1L:4L, def
 
 
 other_opts_group <- parser$add_argument_group("Other options")
+other_opts_group$add_argument("--select_features", type = "integer",
+                              help = paste("number of features to retain in model. If not specified, all",
+                                           "features will be used. If specified, --feature_importance",
+                                           "is also required."))
+
+other_opts_group$add_argument("--feature_importance", type = "character",
+                              help = paste("location of a variable importance table to be used for",
+                                           "feature selection prior to training. Ignored if", 
+                                           "--select_features is not specified"))
+
 other_opts_group$add_argument("--random_seed", type = "integer", default = trunc(runif(1, max = 1e5)),
                               help = "random seed to use (default: a random integer between 0 and 1e5)")
 
@@ -170,6 +180,20 @@ final_data <- final_data %>%
   select(-all_of(remove_cols))
 
 
+# ---- Feature selection data ---------------------------------------------------------------------
+if (!is.null(INPUT$select_features)) {
+  feature_importance <- readRDS(INPUT$feature_importance)
+  
+  if (nrow(feature_importance) <= INPUT$select_features)
+    stop("Feature importance list contains less than the requested number of features")
+  
+  final_features <- feature_importance %>% 
+    slice_max(n = INPUT$select_features, order_by = .data$importance, with_ties = FALSE) %>% 
+    filter(!.data$feature %in% remove_cols) %>% 
+    pull(.data$feature)
+}
+
+
 # ---- Training -----------------------------------------------------------------------------------
 
 # Tuning using 3 replicates of 5-fold CV in each iteration
@@ -193,6 +217,16 @@ final_data <- final_data %>%
   mutate(across(where(is.character), as.factor)) %>% 
   select(.data$species, .data$ace2_accession, .data$evidence_level, .data$label,
          starts_with(feature_prefixes))
+
+if (!is.null(INPUT$select_features)) {  # Need to do feature selection
+  if (!all(final_features %in% colnames(final_data)))
+    stop("Not all selected features found in data. Does feature selection list match input options?")
+  
+  final_data <- final_data %>% 
+    select(.data$species, .data$ace2_accession, .data$evidence_level, .data$label,
+           all_of(final_features))
+}
+
   
 # Prepare data for caret
 final_data <- final_data %>% 
