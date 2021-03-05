@@ -14,11 +14,9 @@ ace2_alignment <- read.fasta("data/calculated/ace2_protein_alignment.fasta", seq
 
 infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
 shedding_data <- read_rds("data/calculated/cleaned_shedding_data.rds")
-transmission_data <- read_rds("data/calculated/cleaned_transmission_data.rds")
 
 sequence_metadata <- infection_data %>% 
   full_join(shedding_data, by = c("species", "ace2_accession")) %>% 
-  full_join(transmission_data, by = c("species", "ace2_accession")) %>% 
   select(.data$species, .data$ace2_accession)
 
 stopifnot(all(sequence_metadata$ace2_accession %in% names(ace2_alignment)))

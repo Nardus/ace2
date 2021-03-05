@@ -7,23 +7,31 @@ all: output/plots/performance.png
 
 # ---- Data ----------------------------------------------------------------------------------------
 # Spike protein amino acid alignment
-data/calculated/ace2_accessions.txt: data/internal/ace2_metadata.csv
-	mkdir -p data/calculated
-	cut -d, -f8 $< | awk 'FNR>1{print}' | sort | uniq > $@ 
 
+# - Check that accession csv is up to date
+data/internal/ace2_accessions.csv: data/internal/ace2_accessions.xlsx
+	$(error ace2_accessions.csv is out of date - re-export the matching excel file)
+
+# - Extract accessions, removing the header row, blank lines, and duplicates:
+data/calculated/ace2_accessions.txt: data/internal/ace2_accessions.csv
+	mkdir -p data/calculated
+	cut -d, -f4 $< | awk 'FNR>1 && NF {print}' | sort | uniq > $@ 
+
+# - Download sequences
 data/external/ace2_protein_sequences.fasta: data/calculated/ace2_accessions.txt
 	mkdir -p data/external
 	epost -db protein -input $< -format acc | \
 		efetch -format fasta > $@
 	awk -f scripts/utils/find_missing_accessions.awk $< $@
 
+# - Align
 data/calculated/ace2_protein_alignment.fasta: data/external/ace2_protein_sequences.fasta
 	mafft-einsi --thread 8 $< > $@
 	
 
 # ---- Pre-processing ------------------------------------------------------------------------------
 # Clean metadata
-data/calculated/cleaned_infection_data.rds: data/internal/ace2_metadata.csv
+data/calculated/cleaned_infection_data.rds: data/internal/infection_data.xlsx data/internal/ace2_accessions.xlsx
 	Rscript scripts/prepare_data.R
 
 
@@ -59,11 +67,11 @@ output/l2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 		--evidence_min 2 --evidence_max 2 \
 		--random_seed 23556284
 
-# - Level 3 (cell culture)
-output/l3_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
+# - Level 3-4 (cell culture)
+output/l3+4_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_categorical --aa_distance --distance_to_humans \
-		--evidence_min 3 --evidence_max 3 \
+		--evidence_min 3 --evidence_max 4 \
 		--random_seed 43564215
 
 # - Level 1 and 2 (i.e. exclude cell culture, in case it makes things worse)
@@ -75,13 +83,13 @@ output/l1+2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 
 
 # Enumerate combinations:
-# - For l3 (cell culture), shedding does not apply
+# - For l3+4 (cell culture), shedding does not apply
 DATASETS = {"all_data/","l2_data/","l1+2_data/"}
 RESPONSE_VARS = {"infection","shedding"}
 
 OUT_FOLDERS = $(shell echo $(DATASETS)$(RESPONSE_VARS))
 L1_L2_MODELS = $(patsubst %, output/%/combined/training_results.rds, $(OUT_FOLDERS))
-L3_MODELS = output/l3_data/infection/combined/training_results.rds
+L3_MODELS = output/l3+4_data/infection/combined/training_results.rds
 
 .PHONY: train_all_features
 train_all_features: $(L1_L2_MODELS) $(L3_MODELS)

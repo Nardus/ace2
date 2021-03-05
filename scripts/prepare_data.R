@@ -2,69 +2,69 @@
 
 library(dplyr)
 library(tidyr)
+library(readxl)
 library(readr)
 
 
 # ---- Load ---------------------------------------------------------------------------------------
-metadata <- read_csv("data/internal/ace2_metadata.csv", 
-                     na = c("", "?", "NA"),
-                     col_types = cols(.default = col_character(),
-                                      `Outcome of infection [1=infection, 0=no infection]` = col_double(),
-                                      `Shedding [0=no, 1=PCR,isolation,or evidence of natural or experimental transmission, ?=unknown or not discussed]` = col_double(),
-                                      `Transmission [1=yes, 0=no, ?=unknown]` = col_double(),
-                                      `Delta G (kcal/mol)` = col_double(),
-                                      `Binding Affinity (M)` = col_double()))
+metadata <- read_excel("data/internal/infection_data.xlsx")
+
+ace2_accessions <- read_excel("data/internal/ace2_accessions.xlsx")
 
 
 # ---- Check data ---------------------------------------------------------------------------------
-check_acc <- metadata %>% 
-  distinct(.data$`Host genus`, .data$`Host species`, .data$`ACE2 sequence`) %>% 
-  add_count(.data$`ACE2 sequence`) %>% 
-  filter(n > 1)
+with(metadata, {
+  stopifnot(all(experiment_type %in% c("cell", "animal")))
+  stopifnot(all(infection_type %in% c("natural", "experimental", "modified cell", "whole cell")))
+  
+  stopifnot(all(infection_type[experiment_type == "animal"] %in% c("natural", "experimental")))
+  stopifnot(all(infection_type[experiment_type == "cell"] %in% c("whole cell", "modified cell")))
+  
+  stopifnot(all(virus_name %in% c("SARS-CoV-2", "SARS-CoV-1", 
+                                  "SARS-like CoV", "ACE2-utilizing SARS-like CoV")))
+  
+  stopifnot(all(infected %in% c(0, 1, NA_integer_)))
+  stopifnot(all(shedding %in% c(0, 1, NA_integer_)))
+  stopifnot(all(transmission %in% c(0, 1, NA_integer_)))
+  
+  stopifnot(all(infected[infection_type == "natural"] == 1))
+  
+  stopifnot(all(species %in% ace2_accessions$species))
+})
 
-if (nrow(check_acc) > 1)
-  warning(length(unique(check_acc$`ACE2 sequence`)), 
-          " ACE2 accession numbers are duplicated across >1 species")
 
-check_spp <- metadata %>% 
-  distinct(.data$`Host genus`, .data$`Host species`, .data$`ACE2 sequence`) %>% 
-  add_count(.data$`Host genus`, .data$`Host species`) %>% 
-  filter(n > 1)
+with(ace2_accessions, {
+  stopifnot(all(species %in% metadata$species))
+  stopifnot(length(unique(species)) == length(species)) # Duplicates will cause issues in join below
+})
 
-if (nrow(check_spp) > 1)
-  warning(n_distinct(check_spp$`Host genus`, check_spp$`Host species`), 
-          " species linked to different ACE2 accesion numbers in different rows")
 
 
 # ---- Relevant columns ---------------------------------------------------------------------------
-metadata <- metadata %>% 
-  rename(study_type = .data$`Animal or cell study`,
-         infection_type = .data$`Infection type [natural or experimental inoculation]`,
-         ace2_accession = .data$`ACE2 sequence`) %>% 
-  mutate(species = paste(.data$`Host genus`, .data$`Host species`),
-         infected = .data$`Outcome of infection [1=infection, 0=no infection]` == 1,
-         shedding = .data$`Shedding [0=no, 1=PCR,isolation,or evidence of natural or experimental transmission, ?=unknown or not discussed]` == 1,
-         transmission = .data$`Transmission [1=yes, 0=no, ?=unknown]` == 1)
+ace2_accessions <- ace2_accessions %>% 
+  select(.data$species, .data$ace2_accession)
 
 # Columns kept in all datasets below:
-base_columns <- c("species", "study_type", "infection_type", "ace2_accession")
+base_columns <- c("species", "experiment_type", "infection_type", "virus_name")
+
+metadata <- metadata %>% 
+  select(all_of(c(base_columns, "infected", "shedding", "transmission"))) %>% 
+  mutate(across(all_of(c("infected", "shedding", "transmission")), as.logical))
 
 
 # ---- Evidence levels ----------------------------------------------------------------------------
 # Evidence quality has 4 levels, with level 1 being most reliable:
 #     1. Natural infection observed 
 #     2. Experimental infection attempted (whole animal)
-#     3. Experimental infection attempted (primary cells)
-#     4. (TODO) Experimental infection attempted (cell line engineered to express ACE2 of a given species)
-warning("TODO: cells engineered to express ACE2 are not currently identifiable")
-
+#     3. Experimental infection attempted (regular cell line)
+#     4. Experimental infection attempted (cell line engineered to express ACE2 of a given species)
 metadata <- metadata %>% 
-  mutate(evidence_level = case_when(.data$study_type == "animal" & .data$infection_type == "natural" ~ 1L,
-                                    .data$study_type == "animal" & .data$infection_type == "experimental" ~ 2L,
-                                    .data$study_type == "cell" ~ 3L,
+  mutate(evidence_level = case_when(.data$experiment_type == "animal" & .data$infection_type == "natural" ~ 1L,
+                                    .data$experiment_type == "animal" & .data$infection_type == "experimental" ~ 2L,
+                                    .data$experiment_type == "cell" & .data$infection_type == "whole cell" ~ 3L,
+                                    .data$experiment_type == "cell" & .data$infection_type == "modified cell" ~ 4L,
                                     TRUE ~ NA_integer_))
 
-stopifnot(all(metadata$infected[metadata$infection_type == "natural"] == TRUE))
 base_columns <- c(base_columns, "evidence_level")
 
 
@@ -73,6 +73,10 @@ base_columns <- c(base_columns, "evidence_level")
 # - Conflicting evidence from less reliable evidence levels are ignored if evidence is already 
 #   known from a more reliable level. Similarly, conflicting evidence from the same level will be 
 #   ignored, so we are simply asking "has it _ever_ been reported to be infected?"
+# - Which virus was involved is currently ignored, but this is recorded for potential downstream
+#   use
+#
+# - Animals recorded as shedding or transmitting must have been infected
 
 # Summarise evidence levels supporting the fact that response_var takes on a given focal_value:
 summarise_evidence <- function(evidence_levels, response_var, focal_value) {
@@ -83,75 +87,71 @@ summarise_evidence <- function(evidence_levels, response_var, focal_value) {
 }
 
 infection_data <- metadata %>% 
+  mutate(infected = case_when(is.na(.data$infected) & .data$shedding ~ TRUE,
+                              is.na(.data$infected) & .data$transmission ~ TRUE,
+                              TRUE ~ .data$infected)) %>% 
+  
   select(all_of(base_columns), .data$infected) %>% 
   distinct() %>% 
   
-  group_by(.data$species, .data$ace2_accession) %>% 
+  group_by(.data$species) %>% 
   summarise(all_evidence_true = summarise_evidence(.data$evidence_level, .data$infected, TRUE),
             all_evidence_false = summarise_evidence(.data$evidence_level, .data$infected, FALSE),
+            viruses_true = summarise_evidence(.data$virus_name, .data$infected, TRUE),
+            viruses_false = summarise_evidence(.data$virus_name, .data$infected, FALSE),
             evidence_level = if_else(any(.data$infected),
                                      min(c(100L, .data$evidence_level[.data$infected])),  # 100L prevents warnings when all(.data$infected) == FALSE
                                      min(.data$evidence_level)),
             infected = any(.data$infected),
             .groups = "drop")
 
-stopifnot(length(unique(infection_data$species)) == nrow(infection_data))  # Expect one ace2_accession per species
-
 
 # ---- Shedding -----------------------------------------------------------------------------------
 # Same procedure as for infectivity data - asking "has shedding _ever_ been observed, and at what
-# evidence level?". However, transmission also means shedding must have happened, so evidence of
-# either is counted as evidence that shedding occurred.
+# evidence level?". 
+# 
+# - transmission means shedding must have happened
+# - animals recorded as not infective should not provide negative data here (otherwise, infection
+#   and shedding become confounded)
 shedding_data <- metadata %>% 
   mutate(shedding = case_when(!is.na(.data$shedding) & !is.na(.data$transmission) ~ .data$shedding | .data$transmission,
                               !is.na(.data$shedding) ~ .data$shedding,
                               !is.na(.data$transmission) ~ .data$transmission,
-                              TRUE ~ NA)) %>% 
+                              TRUE ~ NA),
+         shedding = if_else(!.data$infected & !.data$shedding, NA, .data$shedding)) %>% 
   
   select(all_of(base_columns), .data$shedding) %>% 
   filter(!is.na(.data$shedding)) %>% 
   distinct() %>% 
-  group_by(.data$species, .data$ace2_accession) %>% 
+  group_by(.data$species) %>% 
   summarise(all_evidence_true = summarise_evidence(.data$evidence_level, .data$shedding, TRUE),
             all_evidence_false = summarise_evidence(.data$evidence_level, .data$shedding, FALSE),
+            viruses_true = summarise_evidence(.data$virus_name, .data$shedding, TRUE),
+            viruses_false = summarise_evidence(.data$virus_name, .data$shedding, FALSE),
             evidence_level = if_else(any(.data$shedding),
                                      min(c(100L, .data$evidence_level[.data$shedding])),
                                      min(.data$evidence_level)),
             shedding = any(.data$shedding),
             .groups = "drop")
 
-stopifnot(length(unique(shedding_data$species)) == nrow(shedding_data))
-
-
-# ---- Transmission -------------------------------------------------------------------------------
-transmission_data <- metadata %>% 
-  select(all_of(base_columns), .data$transmission) %>% 
-  filter(!is.na(.data$transmission)) %>% 
-  distinct() %>% 
-  group_by(.data$species, .data$ace2_accession) %>% 
-  summarise(all_evidence_true = summarise_evidence(.data$evidence_level, .data$transmission, TRUE),
-            all_evidence_false = summarise_evidence(.data$evidence_level, .data$transmission, FALSE),
-            evidence_level = if_else(any(.data$transmission),
-                                     min(c(100L, .data$evidence_level[.data$transmission])),
-                                     min(.data$evidence_level)),
-            transmission = any(.data$transmission),
-            .groups = "drop")
-
-
 
 # ---- Convert column types -----------------------------------------------------------------------
-# Response variables converted to character, becuase values should be usable as valid column names
+# Response variables converted to character, because values should be usable as valid column names
 infection_data <- infection_data %>% 
   mutate(infected = if_else(.data$infected, "True", "False"))
 
 shedding_data <- shedding_data %>% 
   mutate(shedding = if_else(.data$shedding, "True", "False"))
 
-transmission_data <- transmission_data %>% 
-  mutate(transmission = if_else(.data$transmission, "True", "False"))
+
+# ---- Add ACE2 accessions ------------------------------------------------------------------------
+ace2_accessions <- ace2_accessions %>% 
+  filter(!is.na(.data$ace2_accession))
+
+infection_data <- inner_join(infection_data, ace2_accessions, by = "species")
+shedding_data <- inner_join(shedding_data, ace2_accessions, by = "species")
 
 
 # ---- Output -------------------------------------------------------------------------------------
 write_rds(infection_data, "data/calculated/cleaned_infection_data.rds")
 write_rds(shedding_data, "data/calculated/cleaned_shedding_data.rds")
-write_rds(transmission_data, "data/calculated/cleaned_transmission_data.rds")
