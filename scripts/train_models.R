@@ -8,7 +8,7 @@ suppressPackageStartupMessages({
 parser <- ArgumentParser(description = "Train ACE2 models using varying subsets of data and features")
 
 parser$add_argument("response_var", type = "character", 
-                    choices = c("infection", "shedding", "transmission"),
+                    choices = c("infection", "shedding"),
                     help = "response variable to train on.")
 
 parser$add_argument("output_path", type = "character",
@@ -68,8 +68,7 @@ if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$distance_to_humans, INPU
 metadata_path <- sprintf("data/calculated/cleaned_%s_data.rds", INPUT$response_var)
 response <- switch(INPUT$response_var,
                    "infection" = "infected",
-                   "shedding" = "shedding",
-                   "transmission" = "transmission")
+                   "shedding" = "shedding")
 
 # Features
 feature_prefixes <- c()
@@ -84,7 +83,7 @@ if (INPUT$distance_to_humans)
   feature_prefixes <- c(feature_prefixes, "distance_to_humans")
 
 if (INPUT$binding_affinity)
-  stop("Not yet implemented") # TODO
+  feature_prefixes <- c(feature_prefixes, "haddock_score")
 
 
 # ---- Setup --------------------------------------------------------------------------------------
@@ -162,11 +161,13 @@ if (!(INPUT$evidence_min == 1 & INPUT$evidence_max == 4)) {
 pairwise_dist_data <- read_rds("data/calculated/features_pairwise_dists.rds")
 dist_to_humans <- read_rds("data/calculated/features_dist_to_humans.rds")
 variable_sites <- read_rds("data/calculated/features_variable_sites.rds")
+haddock_scores <- read_rds("data/calculated/features_haddock_scores.rds")
 
 # Combine
 final_data <- metadata %>% 
   left_join(dist_to_humans, by = "ace2_accession") %>% 
-  left_join(variable_sites, by = "ace2_accession")
+  left_join(variable_sites, by = "ace2_accession") %>% 
+  left_join(haddock_scores, by = "species")
 
 
 stopifnot(nrow(final_data) == n_distinct(metadata$species))

@@ -27,7 +27,20 @@ data/external/ace2_protein_sequences.fasta: data/calculated/ace2_accessions.txt
 # - Align
 data/calculated/ace2_protein_alignment.fasta: data/external/ace2_protein_sequences.fasta
 	mafft-einsi --thread 8 $< > $@
-	
+
+
+# ---- Binding affinity data -----------------------------------------------------------------------
+# From Fischhoff et al:
+data/external/binding_affinity.tar.gz: 
+	curl -l -o $@ "https://zenodo.org/record/4517509/files/ace2-orthologs-dataset.tar.gz"
+
+data/external/haddock_scores/: data/external/binding_affinity.tar.gz
+	mkdir -p $@
+	tar -xzv -C $@ -f $< "ace2-orthologs-dataset/refined_models/runs/*/ranks.models"
+
+data/calculated/features_haddock_scores.rds: data/external/haddock_scores/
+	Rscript scripts/extract_haddock_scores.R
+
 
 # ---- Pre-processing ------------------------------------------------------------------------------
 # Clean metadata
@@ -45,39 +58,38 @@ data/calculated/features_pairwise_dists.rds: data/calculated/ace2_protein_alignm
 # Output format is "dataset/response_var/feature_set/*"
 
 TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
-						data/calculated/features_pairwise_dists.rds
+						data/calculated/features_pairwise_dists.rds \
+						data/calculated/features_haddock_scores.rds
 
 # - All feature sets
-#   TODO: add --binding_affinity
 output/all_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
 		--random_seed 73049274
 
 
 # All feature sets on data from each evidence level:
 #  (note that level 1 [natural infection observed] has no negative data, so 
 #  can't be included separately here)
-#   TODO: add --binding_affinity to all of these
 
 # - Level 2 (experimental infection)
 output/l2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
 		--evidence_min 2 --evidence_max 2 \
 		--random_seed 23556284
 
 # - Level 3-4 (cell culture)
 output/l3+4_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
 		--evidence_min 3 --evidence_max 4 \
 		--random_seed 43564215
 
 # - Level 1 and 2 (i.e. exclude cell culture, in case it makes things worse)
 output/l1+2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
 		--evidence_min 1 --evidence_max 2 \
 		--random_seed 23556284
 
@@ -100,11 +112,10 @@ output/all_data/%/combined/feature_usage.rds: output/all_data/%/combined/trainin
 	Rscript scripts/select_features.R $(@D)
 
 
-# TODO: add binding_affinity here
 output/all_data/%/combined+feature_selection_100/training_results.rds: output/all_data/%/combined/feature_usage.rds \
 																	   $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
 		--random_seed 38721019 \
 		--select_features 100 \
 		--feature_importance $<
