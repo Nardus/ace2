@@ -24,7 +24,7 @@ with(metadata, {
                                   "SARS-like CoV", "ACE2-utilizing SARS-like CoV")))
   
   stopifnot(all(infected %in% c(0, 1, NA_integer_)))
-  stopifnot(all(shedding %in% c(0, 1, NA_integer_)))
+  stopifnot(all(shedding_virus %in% c(0, 1, NA_integer_)))
   stopifnot(all(transmission %in% c(0, 1, NA_integer_)))
   
   stopifnot(all(infected[infection_type == "natural"] == 1))
@@ -41,6 +41,8 @@ with(ace2_accessions, {
 
 
 # ---- Relevant columns ---------------------------------------------------------------------------
+# Note: from here onwards, shedding is formally defined as "shedding infectious virus"; detection
+# of RNA at external sites is ignored
 ace2_accessions <- ace2_accessions %>% 
   select(.data$species, .data$ace2_accession)
 
@@ -48,6 +50,7 @@ ace2_accessions <- ace2_accessions %>%
 base_columns <- c("species", "experiment_type", "infection_type", "virus_name")
 
 metadata <- metadata %>% 
+  rename(shedding = .data$shedding_virus) %>% 
   select(all_of(c(base_columns, "infected", "shedding", "transmission"))) %>% 
   mutate(across(all_of(c("infected", "shedding", "transmission")), as.logical))
 
