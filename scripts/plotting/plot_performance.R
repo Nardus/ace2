@@ -7,48 +7,26 @@ suppressPackageStartupMessages({
   library(stringr)
   library(ggplot2)
   library(cowplot)
-  library(plotROC)
   library(ModelMetrics)
 })
 
+source("scripts/utils/output_utils.R")
 
 # ---- Read all available predictions --------------------------------------------------------------
-load_single_run <- function(dataset, response_var, run_id) {
-  file.path("output", dataset, response_var, run_id, "predictions.rds") %>% 
-    read_rds() %>% 
-    mutate(dataset = dataset,
-           response_var = str_to_sentence(response_var),
-           run_id = run_id)
-}
-
-load_all_runs <- function(data_sub_set) {
-  # output folder structure is: output/dataset/response/run_id/
-  top_dir <- file.path("output", data_sub_set)
-  response_vars <- list.dirs(top_dir, full.names = FALSE, recursive = FALSE)
-  
-  loaded_data <- tibble()
-  
-  for (resp in response_vars) {
-    response_path <- file.path(top_dir, resp)
-    run_ids <- list.dirs(response_path, full.names = FALSE, recursive = FALSE)
-    
-    new_data <- lapply(run_ids, load_single_run, 
-                       dataset = data_sub_set,
-                       response_var = resp) %>% 
-      bind_rows()
-    
-    loaded_data <- bind_rows(loaded_data, new_data)
-  }
-  
-  loaded_data
-}
 
 datasets <- c("all_data", "l2_data", "l3_data", "l1+2_data")
 
 test_preds <- lapply(datasets, load_all_runs) %>% 
   bind_rows()
 
+
+# ---- Plotting order -----------------------------------------------------------------------------
 # TODO: clean labels for each run_id...
+
+RUN_ORDER <- c("combined", "combined+feature_selection_10")
+
+test_preds <- test_preds %>% 
+  mutate(run_id = factor(.data$run_id, levels = RUN_ORDER))
 
 
 # ---- Overall accuracy ---------------------------------------------------------------------------
@@ -67,7 +45,7 @@ p_overall <- ggplot(overall_accuracies, aes(x = run_id, y = accuracy, fill = run
   ylim(c(0, 1)) +
   facet_grid(cols = vars(dataset), rows = vars(response_var), scales = "free_x", space = "free_x") +
   guides(fill = FALSE) +
-  theme_bw(base_size = 6) +
+  theme_bw(base_size = 5) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
   ggtitle("Overall accuracy")
 
@@ -88,8 +66,9 @@ p_class <- ggplot(class_accuracies, aes(x = factor(run_id), y = accuracy, fill =
   labs(x = "feature set") +
   scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
   facet_grid(rows = vars(response_var), cols = vars(dataset), scales = "free_x", space = "free_x") +
-  theme_bw(base_size = 6) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  theme_bw(base_size = 5) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        legend.key.size = unit(0.5, "lines")) +
   ggtitle("Accuracy by class (sensitivity/specificity)")
 
 
@@ -120,8 +99,8 @@ make_level_plot <- function(data_name, acc_data = level_accuracies, lab_data = l
     scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
     facet_grid(rows = vars(response_var), cols = vars(label)) +
     guides(fill = FALSE) +
-    theme_bw(base_size = 6) +
-    ggtitle(sprintf("Accuracy by evidence level (%s model)", data_name))
+    theme_bw(base_size = 5) +
+    ggtitle(sprintf("Accuracy by evidence level\n(%s model)", data_name))
 }
 
 p_level_all <- make_level_plot("all_data")
@@ -129,13 +108,14 @@ p_level_l1_2 <- make_level_plot("l1+2_data")
 
 
 # ---- Combine / save -----------------------------------------------------------------------------
-p_final <- plot_grid(p_overall, p_class, p_level_all, p_level_l1_2,
+p_final <- plot_grid(p_overall, p_class, p_level_l1_2, p_level_all,
+                     rel_widths = c(1, 1.5),
                      nrow = 2, align = "h", axis = "tb")
 
 dir.create("output/plots", recursive = TRUE)
 ggsave2("output/plots/performance.png", 
         p_final,
-        width = 5, height = 8)
+        width = 6, height = 8)
 
 
 

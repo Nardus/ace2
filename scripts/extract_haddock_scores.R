@@ -17,8 +17,9 @@ get_average_score <- function(folder_name) {
   message(full_path)
   
   species <- folder_name %>% 
-    str_extract("[[:alpha:]]+_[[:alpha:]]+") %>% 
-    str_replace("_", " ") %>% 
+    str_remove("^autosubmit-") %>% 
+    str_remove("_params$") %>% 
+    str_replace_all("_", " ") %>% 
     str_to_sentence()
   
   scores <- readLines(full_path) %>% 

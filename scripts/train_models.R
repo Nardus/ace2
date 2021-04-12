@@ -53,8 +53,8 @@ other_opts_group$add_argument("--feature_importance", type = "character",
 other_opts_group$add_argument("--random_seed", type = "integer", default = trunc(runif(1, max = 1e5)),
                               help = "random seed to use (default: a random integer between 0 and 1e5)")
 
-other_opts_group$add_argument("--n_threads", type = "integer", default = 8,
-                              help = "number of parallel threads allowed (default: 8)")
+other_opts_group$add_argument("--n_threads", type = "integer", default = 16,
+                              help = "number of parallel threads allowed (default: 16)")
 
 
 ## Check input
@@ -100,6 +100,7 @@ suppressPackageStartupMessages({
   
   source("scripts/utils/aa_distance_utils.R")
   source("scripts/utils/feature_calc_utils.R")
+  source("scripts/utils/training_utils.R")
 })
 
 
@@ -201,8 +202,8 @@ if (!is.null(INPUT$select_features)) {
 train_setup <- trainControl(method = "LOOCV",
                             classProbs = TRUE,
                             search = "random",
-                            savePredictions = "final",
-                            summaryFunction = twoClassSummary)
+                            savePredictions = "final")#,
+                            #summaryFunction = GMSummary)
   
 # Calculate additional (training set-specific) features
 #  - These depend on the particular test set, but are correct by default for leave-one-out CV, 
@@ -246,7 +247,7 @@ parameter_combos <- lapply(TUNING_PARAMETERS, sample, size = N_HYPER_PARAMS, rep
 trained_model <- train(label ~ .,
                        data = train_data,
                        method = "xgbTree",
-                       metric = "ROC",
+                       metric = "Accuracy",#"GM",  # Geometric mean of sensitivity and specificity
                        trControl = train_setup,
                        tuneGrid = parameter_combos,
                        na.action = na.pass,

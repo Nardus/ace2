@@ -26,25 +26,30 @@ data/external/ace2_protein_sequences.fasta: data/calculated/ace2_accessions.txt
 
 # - Align
 data/calculated/ace2_protein_alignment.fasta: data/external/ace2_protein_sequences.fasta
+	mkdir -p data/calculated
 	mafft-einsi --thread 8 $< > $@
 
 
 # ---- Binding affinity data -----------------------------------------------------------------------
 # From Fischhoff et al:
 data/external/binding_affinity.tar.gz: 
+	mkdir -p data/external
 	curl -l -o $@ "https://zenodo.org/record/4517509/files/ace2-orthologs-dataset.tar.gz"
 
 data/external/haddock_scores/: data/external/binding_affinity.tar.gz
 	mkdir -p $@
 	tar -xzv -C $@ -f $< "ace2-orthologs-dataset/refined_models/runs/*/ranks.models"
 
-data/calculated/features_haddock_scores.rds: data/external/haddock_scores/
+data/calculated/features_haddock_scores.rds: data/external/haddock_scores/ \
+											 data/internal/ace2_accessions.xlsx
+	mkdir -p data/calculated
 	Rscript scripts/extract_haddock_scores.R
 
 
 # ---- Pre-processing ------------------------------------------------------------------------------
 # Clean metadata
 data/calculated/cleaned_infection_data.rds: data/internal/infection_data.xlsx data/internal/ace2_accessions.xlsx
+	mkdir -p data/calculated
 	Rscript scripts/prepare_data.R
 
 
@@ -54,19 +59,63 @@ data/calculated/features_pairwise_dists.rds: data/calculated/ace2_protein_alignm
 	Rscript scripts/calculate_features.R
 
 
-# ---- Training ------------------------------------------------------------------------------------
+# ---- Feature selection ---------------------------------------------------------------------------
 # Output format is "dataset/response_var/feature_set/*"
 
 TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 						data/calculated/features_pairwise_dists.rds \
 						data/calculated/features_haddock_scores.rds
 
-# - All feature sets
-output/all_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
+
+# Full model (all features)
+output/all_data/%/all_features/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
 		--random_seed 73049274
 
+output/all_data/%/all_features/feature_usage.rds: output/all_data/%/all_features/training_results.rds
+	Rscript scripts/select_features.R $(@D)
+
+.PRECIOUS: output/all_data/shedding/all_features/feature_usage.rds \
+		   output/all_data/infection/all_features/feature_usage.rds
+
+
+# Same training as above, but with features reduced
+# - last portion of folder name determines number of features kept
+output/all_data/infection/feature_selection_%/training_results.rds: output/all_data/infection/all_features/feature_usage.rds \
+																	$(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R infection $(@D) \
+		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
+		--random_seed 54278762 \
+		--select_features $* \
+		--feature_importance $<
+		
+output/all_data/shedding/feature_selection_%/training_results.rds: output/all_data/shedding/all_features/feature_usage.rds \
+																   $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R shedding $(@D) \
+		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
+		--random_seed 27337413 \
+		--select_features $* \
+		--feature_importance $<
+
+# Enumerate combinations:
+#  - e.g. "output/all_data/infection/feature_selection_10/training_results.rds"
+FEATURE_COUNTS = 5 10 15 25 50 75 100 125 150
+RESPONSE_VARS = infection shedding
+
+FEATURE_MODELS = $(foreach a,$(RESPONSE_VARS), \
+					$(foreach b,$(FEATURE_COUNTS), \
+						output/all_data/$(a)/feature_selection_$(b)/training_results.rds ))
+
+.PHONY: train_feature_selection
+train_feature_selection: $(FEATURE_MODELS)
+
+
+# ---- Training on data subsets ------------------------------------------------------------------------------------
+# As above, output format is "dataset/response_var/feature_set/*"
+# - All data models already trained during feature selection
+
+# TODO: reduce number of features below
 
 # All feature sets on data from each evidence level:
 #  (note that level 1 [natural infection observed] has no negative data, so 
@@ -96,36 +145,26 @@ output/l1+2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 
 # Enumerate combinations:
 # - For l3+4 (cell culture), shedding does not apply
-DATASETS = {"all_data/","l2_data/","l1+2_data/"}
-RESPONSE_VARS = {"infection","shedding"}
+DATASETS = all_data l2_data l1+2_data
 
-OUT_FOLDERS = $(shell echo $(DATASETS)$(RESPONSE_VARS))
+OUT_FOLDERS = $(foreach a,$(DATASETS), \
+				$(foreach b,$(RESPONSE_VARS), \
+					$(a)/$(b) ))
+
 L1_L2_MODELS = $(patsubst %, output/%/combined/training_results.rds, $(OUT_FOLDERS))
 L3_MODELS = output/l3+4_data/infection/combined/training_results.rds
 
-.PHONY: train_all_features
+.PHONY: train_all_features train
 train_all_features: $(L1_L2_MODELS) $(L3_MODELS)
-
-
-# ---- Feature selection ---------------------------------------------------------------------------
-output/all_data/%/combined/feature_usage.rds: output/all_data/%/combined/training_results.rds
-	Rscript scripts/select_features.R $(@D)
-
-
-output/all_data/%/combined+feature_selection_100/training_results.rds: output/all_data/%/combined/feature_usage.rds \
-																	   $(TRAINING_REQUIREMENTS)
-	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
-		--random_seed 38721019 \
-		--select_features 100 \
-		--feature_importance $<
-
-.PHONY: train_feature_selection train
-train_feature_selection: output/all_data/infection/combined+feature_selection_100/training_results.rds \
-				   		 output/all_data/shedding/combined+feature_selection_100/training_results.rds
 
 train: train_all_features \
        train_feature_selection
+
+# Fitted models should never be deleted (even when produced as an intermediate file
+# for another step):
+.PRECIOUS: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS) \
+		   output/all_data/infection/all_features/training_results.rds \
+		   output/all_data/shedding/all_features/training_results.rds
 
 
 # ---- Plots ---------------------------------------------------------------------------------------

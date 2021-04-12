@@ -6,6 +6,12 @@ conda env create -f environment.yml
 conda activate sars_susceptibles
 ```
 
+## _Development only:_
+```
+export RSTUDIO_WHICH_R=$(which R)
+rstudio &
+```
+
 
 ## Data definitions
 
