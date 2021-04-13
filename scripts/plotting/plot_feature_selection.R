@@ -20,13 +20,13 @@ test_preds <- load_all_runs("all_data") %>%
 
 # ---- Clean labels and set order ------------------------------------------------------------------
 plot_order <- c("All features", 
-                sprintf("Feature selection\n(top %d)", 
-                        c(seq(5, 15, by = 5), seq(25, 150, by = 25))))
+                sprintf("Feature selection\n(top %d)", 1:11))
 
 test_preds <- test_preds %>% 
   mutate(feature_count = str_extract(.data$run_id, "[[:digit:]]+$"),
          run_name = if_else(.data$run_id == "all_features", "All features", 
                              sprintf("Feature selection\n(top %s)", .data$feature_count))) %>% 
+  filter(.data$run_name %in% plot_order) %>% 
   mutate(run_name = factor(.data$run_name, levels = plot_order))
 
 

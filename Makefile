@@ -15,10 +15,19 @@ data/internal/ace2_accessions.csv: data/internal/ace2_accessions.xlsx
 # - Extract accessions, removing the header row, blank lines, and duplicates:
 data/calculated/ace2_accessions.txt: data/internal/ace2_accessions.csv
 	mkdir -p data/calculated
-	cut -d, -f4 $< | awk 'FNR>1 && NF {print}' | sort | uniq > $@ 
+	cut -d, -f4 $< | awk 'FNR>1 && NF {print}' > $@ 
+
+# - Get additional accessions from NCBI Orthologs:
+data/calculated/ncbi_accessions.txt: data/internal/NCBI_ACE2_orthologs.csv
+	mkdir -p data/calculated
+	cut -d, -f7 $< | awk 'FNR>1 && NF {print}' > $@ 
+
+data/calculated/all_accessions.txt: data/calculated/ace2_accessions.txt data/calculated/ncbi_accessions.txt
+	cat $^ | sort | uniq > $@ 
+
 
 # - Download sequences
-data/external/ace2_protein_sequences.fasta: data/calculated/ace2_accessions.txt
+data/external/ace2_protein_sequences.fasta: data/calculated/all_accessions.txt
 	mkdir -p data/external
 	epost -db protein -input $< -format acc | \
 		efetch -format fasta > $@
@@ -27,7 +36,7 @@ data/external/ace2_protein_sequences.fasta: data/calculated/ace2_accessions.txt
 # - Align
 data/calculated/ace2_protein_alignment.fasta: data/external/ace2_protein_sequences.fasta
 	mkdir -p data/calculated
-	mafft-einsi --thread 8 $< > $@
+	mafft-einsi --thread 16 $< > $@
 
 
 # ---- Binding affinity data -----------------------------------------------------------------------
@@ -100,7 +109,7 @@ output/all_data/shedding/feature_selection_%/training_results.rds: output/all_da
 
 # Enumerate combinations:
 #  - e.g. "output/all_data/infection/feature_selection_10/training_results.rds"
-FEATURE_COUNTS = 5 10 15 25 50 75 100 125 150
+FEATURE_COUNTS = 1 2 3 4 5 6 7 8 9 10 11
 RESPONSE_VARS = infection shedding
 
 FEATURE_MODELS = $(foreach a,$(RESPONSE_VARS), \
@@ -168,8 +177,21 @@ train: train_all_features \
 
 
 # ---- Plots ---------------------------------------------------------------------------------------
+output/plots/feature_selection.png: $(FEATURE_MODELS)
+	Rscript scripts/plotting/plot_feature_selection.R
+
 output/plots/performance.png: $(FEATURE_MODELS) $(L2_MODELS) $(L3_MODELS)
 	Rscript scripts/plotting/plot_performance.R
-	
+
+output/plots/varimp_infection.png: $(FEATURE_MODELS)
+	Rscript scripts/plotting/plot_varimp_infection.R
+
+
+output/plots/varimp_shedding.png: $(FEATURE_MODELS)
+	Rscript scripts/plotting/plot_varimp_shedding.R
+
+
 .PHONY: plots
-plots: output/plots/performance.png
+plots: output/plots/feature_selection.png \
+	   output/plots/performance.png \
+	   output/plots/varimp_shedding.png

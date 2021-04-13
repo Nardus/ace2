@@ -202,12 +202,11 @@ if (!is.null(INPUT$select_features)) {
 train_setup <- trainControl(method = "LOOCV",
                             classProbs = TRUE,
                             search = "random",
-                            savePredictions = "final")#,
-                            #summaryFunction = GMSummary)
+                            savePredictions = "final")
   
 # Calculate additional (training set-specific) features
 #  - These depend on the particular test set, but are correct by default for leave-one-out CV, 
-#    since the current virus is not included when summarising its neighbours
+#    since the current virus is not included when summarizing its neighbours
 closest_positive <- get_dist_to_closest_positive(pairwise_dist_data, metadata)
 consensus_dists <- get_consensus_dist(variable_sites, variable_sites, metadata)
   
@@ -247,7 +246,7 @@ parameter_combos <- lapply(TUNING_PARAMETERS, sample, size = N_HYPER_PARAMS, rep
 trained_model <- train(label ~ .,
                        data = train_data,
                        method = "xgbTree",
-                       metric = "Accuracy",#"GM",  # Geometric mean of sensitivity and specificity
+                       metric = "Accuracy",
                        trControl = train_setup,
                        tuneGrid = parameter_combos,
                        na.action = na.pass,

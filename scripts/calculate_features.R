@@ -12,6 +12,7 @@ source("scripts/utils/aa_distance_utils.R")
 # ---- Load sequences + metadata ------------------------------------------------------------------
 ace2_alignment <- read.fasta("data/calculated/ace2_protein_alignment.fasta", seqtype = "AA")
 
+# Data for known species
 infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
 shedding_data <- read_rds("data/calculated/cleaned_shedding_data.rds")
 
@@ -19,11 +20,27 @@ sequence_metadata <- infection_data %>%
   full_join(shedding_data, by = c("species", "ace2_accession")) %>% 
   select(.data$species, .data$ace2_accession)
 
+# Data for holdout species
+# - Removing both matched species names AND accessions already used to represent related species
+additional_metadata <- read_csv("data/internal/NCBI_ACE2_orthologs.csv",
+                                col_types = cols(.default = "c")) %>% 
+  select(species = .data$`Scientific name`, 
+         ace2_accession = .data$`RefSeq Protein accessions`) %>% 
+  filter(!.data$species %in% sequence_metadata$species & 
+           !.data$ace2_accession %in% sequence_metadata$ace2_accession)
+
+sequence_metadata <- sequence_metadata %>% 
+  bind_rows(additional_metadata)
+
 stopifnot(all(sequence_metadata$ace2_accession %in% names(ace2_alignment)))
 
 
+# Ensure alignment matches this selection
+ace2_alignment <- ace2_alignment[unique(sequence_metadata$ace2_accession)]
+
+
 # ---- Pairwise distances -------------------------------------------------------------------------
-grantham_dists <- get_all_distances(ace2_alignment, type = "grantham", cores = 4)
+grantham_dists <- get_all_distances(ace2_alignment, type = "grantham", cores = 16)
 
 dist_data <- tibble(ace2_accession = rownames(grantham_dists),
                     data.frame(grantham_dists)) %>% 
