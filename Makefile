@@ -109,7 +109,7 @@ output/all_data/shedding/feature_selection_%/training_results.rds: output/all_da
 
 # Enumerate combinations:
 #  - e.g. "output/all_data/infection/feature_selection_10/training_results.rds"
-FEATURE_COUNTS = 1 2 3 4 5 6 7 8 9 10 11
+FEATURE_COUNTS = 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
 RESPONSE_VARS = infection shedding
 
 FEATURE_MODELS = $(foreach a,$(RESPONSE_VARS), \
@@ -176,6 +176,14 @@ train: train_all_features \
 		   output/all_data/shedding/all_features/training_results.rds
 
 
+# ---- Predict other species for which ACE2 sequences are available --------------------------------
+
+output/all_data/infection/feature_selection_2/additional_preds_infection.rds: output/all_data/infection/feature_selection_2/training_results.rds \
+																			  output/all_data/shedding/feature_selection_2/training_results.rds \
+																			  data/internal/NCBI_ACE2_orthologs.csv
+	Rscript scripts/predict_holdout.R
+
+
 # ---- Plots ---------------------------------------------------------------------------------------
 output/plots/feature_selection.png: $(FEATURE_MODELS)
 	Rscript scripts/plotting/plot_feature_selection.R
@@ -194,4 +202,5 @@ output/plots/varimp_shedding.png: $(FEATURE_MODELS)
 .PHONY: plots
 plots: output/plots/feature_selection.png \
 	   output/plots/performance.png \
+	   output/plots/varimp_infection.png \
 	   output/plots/varimp_shedding.png
