@@ -1,9 +1,11 @@
 ## Summarise recorded meta-analysis data to one record per species
 
-library(dplyr)
-library(tidyr)
-library(readxl)
-library(readr)
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyr)
+  library(readxl)
+  library(readr)
+})
 
 
 # ---- Load ---------------------------------------------------------------------------------------

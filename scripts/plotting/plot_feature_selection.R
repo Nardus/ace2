@@ -19,13 +19,15 @@ test_preds <- load_all_runs("all_data") %>%
 
 
 # ---- Clean labels and set order ------------------------------------------------------------------
-plot_order <- c("All features", 
-                sprintf("Feature selection\n(top %d)", 1:11))
+all_feature_location <- 15 + 5
+plot_order <- c(sprintf("%d", 1:15),
+                "All features")
 
 test_preds <- test_preds %>% 
   mutate(feature_count = str_extract(.data$run_id, "[[:digit:]]+$"),
+         feature_count = if_else(is.na(.data$feature_count), all_feature_location, as.numeric(.data$feature_count)),
          run_name = if_else(.data$run_id == "all_features", "All features", 
-                             sprintf("Feature selection\n(top %s)", .data$feature_count))) %>% 
+                             sprintf("%s", .data$feature_count))) %>% 
   filter(.data$run_name %in% plot_order) %>% 
   mutate(run_name = factor(.data$run_name, levels = plot_order))
 
@@ -33,22 +35,29 @@ test_preds <- test_preds %>%
 # ---- Accuracy by class ---------------------------------------------------------------------------
 # Only makes sense for "all_data" runs
 class_accuracies <- test_preds %>% 
-  group_by(.data$dataset, .data$response_var, .data$run_name, .data$label) %>% 
+  group_by(.data$dataset, .data$response_var, .data$run_name, .data$iteration, 
+           .data$label, .data$feature_count) %>% 
   summarise(n = n(),
             accuracy = sum(.data$label == .data$prediction) / n(),
-            .groups = "drop") %>% 
-  mutate(n = sprintf("N = %d", .data$n))
+            .groups = "drop")
 
 
-p_class <- ggplot(class_accuracies, aes(x = run_name, y = accuracy)) +
-  geom_col(colour = "grey20", position = "dodge") +
-  geom_text(aes(label = n, y = accuracy + 0.05), size = 2, position = position_dodge(width = 1)) +
-  labs(x = "feature set") +
-  scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
-  facet_grid(rows = vars(response_var), cols = vars(label), scales = "free_x", space = "free_x") +
+p_class <- ggplot(class_accuracies[class_accuracies$feature_count != all_feature_location, ], 
+                  aes(x = feature_count, y = accuracy, colour = label)) +
+  geom_blank() +
+  geom_hline(yintercept = 0.5, linetype = 2, colour = "grey20") +
+  geom_point() +
+  geom_line(aes(group = label)) +
+  geom_jitter(data = class_accuracies[class_accuracies$feature_count == all_feature_location, ]) +
+  
+  scale_x_continuous(breaks = unique(class_accuracies$feature_count),
+                     labels = plot_order) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25), limits = c(0, 1)) +
+  scale_colour_brewer(name = NULL, palette = "Set1", 
+                      labels = c("True" = "Sensitivity", "False" = "Specificity")) +
+  facet_grid(rows = vars(response_var), scales = "free_x", space = "free_x") +
   theme_bw(base_size = 7) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
-  ggtitle("Accuracy by class (sensitivity/specificity)")
+  labs(title = "Feature selection", x = "Number of features", y = "Proportion accurate")
 
 
 

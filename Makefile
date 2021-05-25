@@ -77,9 +77,11 @@ TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 
 
 # Full model (all features)
+# - Here using replicates to check whether feature selection is repeatable
 output/all_data/%/all_features/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_categorical --aa_distance --distance_to_humans --binding_affinity \
+		--replicates 100 \
 		--random_seed 73049274
 
 output/all_data/%/all_features/feature_usage.rds: output/all_data/%/all_features/training_results.rds
@@ -190,6 +192,21 @@ output/plots/feature_selection.png: $(FEATURE_MODELS)
 
 output/plots/performance.png: $(FEATURE_MODELS) $(L2_MODELS) $(L3_MODELS)
 	Rscript scripts/plotting/plot_performance.R
+
+
+# Variable importance
+output/plots/varimp_overview_%.png: output/all_data/%/all_features/feature_usage.rds \
+									output/all_data/%/all_features/feature_usage_by_iteration.rds
+	Rscript scripts/plotting/plot_varimp_overview.R $(word 2,$^) $@
+
+
+output/plots/varimp_detail_infection.png: output/all_data/infection/all_features/training_results.rds \
+										  output/all_data/infection/feature_selection_2/training_results.rds
+	Rscript scripts/plotting/plot_varimp_detail.R \
+		--full_model $< \
+		--best_model echo $(word 2,$^) \
+		--output_name $@
+
 
 output/plots/varimp_infection.png: $(FEATURE_MODELS)
 	Rscript scripts/plotting/plot_varimp_infection.R

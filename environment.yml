@@ -17,10 +17,13 @@ dependencies:
   - r-readxl=1.3.1
   - r-stringr=1.4.0
   - r-seqinr=4.2_4
+  - r-ape=5.5
   - r-ggplot2=3.3.3
+  - bioconductor-ggtree=2.4.1
   - r-cowplot=1.1.1
   - r-caret=6.0_86
   - r-e1071=1.7_4
   - r-doParallel=1.0.16
   - r-modelmetrics=1.2.2
   - r-xgboost=1.3.3
+  - r-apcluster=1.4.8

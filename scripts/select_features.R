@@ -33,18 +33,23 @@ dummy_encoding <- dummyVars(~ ., data = features)
 feature_mat <- predict(dummy_encoding, features)
 
 colnames(feature_mat) <- str_remove(colnames(feature_mat), "\\.")
-feature_mat <- feature_mat[, training_results$finalModel$finalModel$feature_names]
 
-shap_values <- predict(training_results$finalModel$finalModel, 
-                       newdata = feature_mat,
-                       predcontrib = TRUE)
+get_shap <- function(model, all_features = feature_mat) {
+  newdata <- all_features[, model$finalModel$feature_names]
+  
+  predict(model$finalModel, newdata = newdata, predcontrib = TRUE)
+}
+
+shap_values <- lapply(training_results$trained_models, get_shap)
+shap_values <- lapply(shap_values, as.data.frame)
+
 
 # Summarise to feature level:
 feature_importance <- shap_values %>% 
-  as.data.frame() %>% 
+  bind_rows(.id = "iteration") %>% 
   select(-.data$BIAS) %>% 
-  pivot_longer(everything(), names_to = "feature", values_to = "shap_value") %>% 
-  group_by(.data$feature) %>% 
+  pivot_longer(!iteration, names_to = "feature", values_to = "shap_value") %>% 
+  group_by(.data$iteration, .data$feature) %>% 
   summarise(importance = mean(abs(.data$shap_value)),
             .groups = "drop")
 
@@ -54,12 +59,20 @@ feature_importance <- feature_importance %>%
   mutate(feature = if_else(startsWith(.data$feature, "variable_site_"), 
                                       substring(.data$feature, 1, nchar(.data$feature) - 1),
                                       .data$feature)) %>% 
-  group_by(.data$feature) %>% 
+  group_by(.data$iteration, .data$feature) %>% 
   summarise(importance = sum(.data$importance),
             .groups = "drop")
 
 
+# For variable selection: average across all replicates
+feature_importance_mean <- feature_importance %>% 
+  group_by(.data$feature) %>% 
+  summarise(importance = mean(.data$importance))
+
 
 # ---- Output ---------------------------------------------------------------------------------
-out_path <- file.path(INPUT$model_path, "feature_usage.rds")
-saveRDS(feature_importance, out_path)
+out_path_all <- file.path(INPUT$model_path, "feature_usage_by_iteration.rds")
+out_path_mean <- file.path(INPUT$model_path, "feature_usage.rds")
+
+saveRDS(feature_importance, out_path_all)
+saveRDS(feature_importance_mean, out_path_mean)

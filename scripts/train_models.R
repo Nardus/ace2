@@ -40,6 +40,11 @@ data_group$add_argument("--evidence_max", type = "integer", choices = 1L:4L, def
 
 
 other_opts_group <- parser$add_argument_group("Other options")
+other_opts_group$add_argument("--replicates", type = "integer", default = 1,
+                              help = paste("number of repeats (default = 1). If replicates > 1,",
+                                           "the entire training and evaluation procedure will be",
+                                           "repeated."))
+
 other_opts_group$add_argument("--select_features", type = "integer",
                               help = paste("number of features to retain in model. If not specified, all",
                                            "features will be used. If specified, --feature_importance",
@@ -63,6 +68,8 @@ INPUT <- parser$parse_args()
 if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$distance_to_humans, INPUT$binding_affinity))
   stop("No features selected. Run train_models.R --help for available feature sets")
 
+if (INPUT$replicates < 1)
+  stop("Invalid number of replicates")
 
 # Response variable:
 metadata_path <- sprintf("data/calculated/cleaned_%s_data.rds", INPUT$response_var)
@@ -229,7 +236,6 @@ if (!is.null(INPUT$select_features)) {  # Need to do feature selection
            all_of(final_features))
 }
 
-  
 # Prepare data for caret
 final_data <- final_data %>% 
   mutate(label = factor(.data$label, levels = c("True", "False"))) %>%  # Caret's twoClassSummary treats level 1 as "TRUE"
@@ -239,49 +245,61 @@ train_data <- final_data %>%
   select(-.data$species, -.data$ace2_accession, -.data$evidence_level) # Remove non-feature columns
   
 # Train
-parameter_combos <- lapply(TUNING_PARAMETERS, sample, size = N_HYPER_PARAMS, replace = TRUE) %>% 
-  bind_rows() %>% 
-  as.data.frame()
+dir.create(INPUT$output_path, recursive = TRUE)
+
+all_models <- list()
+all_predictions <- list()
+
+for (i in 1:INPUT$replicates) {
+  parameter_combos <- lapply(TUNING_PARAMETERS, sample, size = N_HYPER_PARAMS, replace = TRUE) %>% 
+    bind_rows() %>% 
+    as.data.frame()
   
-trained_model <- train(label ~ .,
-                       data = train_data,
-                       method = "xgbTree",
-                       metric = "Accuracy",
-                       trControl = train_setup,
-                       tuneGrid = parameter_combos,
-                       na.action = na.pass,
-                       nthread = 1)
-
-# Correct predictions
-# TODO: may need to be optimized
-cutoff <- 0.5 
-
-predictions <- trained_model$pred %>% 
-  mutate(pred = if_else(.data$True > cutoff, "True", "False"))
+  trained_model <- train(label ~ .,
+                         data = train_data,
+                         method = "xgbTree",
+                         metric = "Accuracy",
+                         trControl = train_setup,
+                         tuneGrid = parameter_combos,
+                         na.action = na.pass,
+                         nthread = 1)
+  
+  # Correct predictions
+  # TODO: may need to be optimized
+  cutoff <- 0.5 
+  
+  predictions <- trained_model$pred %>% 
+    mutate(pred = if_else(.data$True > cutoff, "True", "False"))
+  
+  # Save
+  all_models[[i]] <- trained_model
+  all_predictions[[i]] <- predictions
+  
+  # Binary version of model, compatible with future xgboost releases:
+  model_name <- sprintf("xgboost_model_%i.model", i)
+  xgb.save(trained_model$finalModel, file.path(INPUT$output_path, model_name))
+}
 
 
 # ---- Output -------------------------------------------------------------------------------------
-dir.create(INPUT$output_path, recursive = TRUE)
-
 # Predictions
-predictions <- final_data %>% 
+all_predictions <- bind_rows(all_predictions, .id = "iteration")
+
+all_predictions <- final_data %>% 
   rowid_to_column("rowIndex") %>% 
-  full_join(predictions, by = "rowIndex") %>% 
-  select(.data$species, .data$ace2_accession, .data$label, .data$evidence_level,
+  full_join(all_predictions, by = "rowIndex") %>% 
+  select(.data$iteration, .data$species, .data$ace2_accession, .data$label, .data$evidence_level,
          prediction = .data$pred,
          prob = .data$True)
 
-stopifnot(nrow(predictions) == nrow(final_data))
+stopifnot(nrow(all_predictions) == nrow(final_data)*INPUT$iterations)
 
-write_rds(predictions, file.path(INPUT$output_path, "predictions.rds"))
+write_rds(all_predictions, file.path(INPUT$output_path, "predictions.rds"))
 
 
 # Model
-training_results <- list(finalModel = trained_model,
+training_results <- list(trained_models = all_models,
                          trainingData = final_data)
 
 write_rds(training_results, file.path(INPUT$output_path, "training_results.rds"), 
           compress = "gz", compression = 9)
-
-# Binary version of model, compatible with future xgboost releases:
-xgb.save(trained_model$finalModel, file.path(INPUT$output_path, "xgboost_model.model"))

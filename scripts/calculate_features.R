@@ -2,10 +2,12 @@
 ## - Only features constant across all training sets calculated here, for the rest, see 
 ##   'feature_calc_utils.R'
 
-library(dplyr)
-library(tidyr)
-library(readr)
-library(seqinr)
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyr)
+  library(readr)
+  library(seqinr)
+})
 
 source("scripts/utils/aa_distance_utils.R")
 
