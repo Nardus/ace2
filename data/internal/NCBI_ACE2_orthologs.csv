@@ -2,7 +2,7 @@ Gene ID,Gene symbol,Description,Scientific name,Common name,RefSeq Transcript ac
 59272,ACE2,angiotensin converting enzyme 2,Homo sapiens,human,NM_001371415.1,NP_001358344.1,,curated,RefseqSelect,default-seq
 70008,Ace2,angiotensin I converting enzyme (peptidyl-dipeptidase A) 2,Mus musculus,house mouse,NM_027286.4,NP_081562.2,11117526,curated,RefseqSelect,default-seq
 302668,Ace2,angiotensin I converting enzyme 2,Rattus norvegicus,Norway rat,NM_001012006.2,NP_001012006.1,11117526,curated,,default-seq
-418623,ACE2,angiotensin I converting enzyme 2,Gallus gallus,chicken,XM_416822.5,XP_416822.2,11117526,model,,default-seq
+418623,ACE2,angiotensin I converting enzyme 2,Gallus gallus,chicken,XM_416822.5,XP_416822.3,11117526,model,,default-seq
 465511,ACE2,angiotensin converting enzyme 2,Pan troglodytes,chimpanzee,XM_016942979.1,XP_016798468.1,11117526,model,,default-seq
 480847,ACE2,angiotensin converting enzyme 2,Canis lupus familiaris,dog,NM_001165260.1,NP_001158732.1,11117526,curated,,default-seq
 509235,ACE2,angiotensin converting enzyme 2,Bos taurus,cattle,XM_005228428.4,XP_005228485.1,11117526,model,,default-seq

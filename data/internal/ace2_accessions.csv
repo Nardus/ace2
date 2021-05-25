@@ -1,9 +1,9 @@
-﻿class,order,species,ace2_accession,ace2_species,haddock_species,Notes
+class,order,species,ace2_accession,ace2_species,haddock_species,Notes
 Aves,Anseriformes,Anas platyrhynchos,XP_012949915.3,this_species,this_species,
 Aves,Anseriformes,Anser anser,XP_013039300.1,Anser cygnoides,Anser cygnoides,
 Aves,Anseriformes,Anser cygnoides,XP_013039300.1,this_species,this_species,
 Aves,Galliformes,Coturnix japonica,XP_015742063.1,this_species,this_species,
-Aves,Galliformes,Gallus gallus,XP_416822.2,this_species,this_species,
+Aves,Galliformes,Gallus gallus,XP_416822.3,this_species,this_species,
 Aves,Galliformes,Meleagris gallopavo,XP_019467554.1,this_species,this_species,
 Mammalia,Artiodactyla,Bos mutus,XP_005903173.1,this_species,this_species,
 Mammalia,Artiodactyla,Bos taurus,NP_001019673.2,this_species,this_species,
@@ -97,4 +97,4 @@ Mammalia,Rodentia,Sciurus niger,XP_015343540.1,Marmota marmota,Marmota marmota,"
 Mammalia,Rodentia,Sigmodon fulviventer,XP_036030683.1,Onychomys torridus,Onychomys torridus,Closest species based on timetree.org; 3 equidistant candidates so took the only one not yet present here (but also used to replace other species)
 Mammalia,Rodentia,Sigmodon hispidus,XP_036030683.1,Onychomys torridus,Onychomys torridus,
 Mammalia,Rodentia,Urocitellus elegans,XP_026252505.1,Urocitellus parryii,Urocitellus parryii,
-Mammalia,Scandentia,Tupaia belangeris,XP_006164754.1,Tupaia chinensis,Tupaia chinensis,"Closest species based on timetree.org; 2 equidistant candidates, this one listed in NCBI ortholog table so so more likely to have been checked for errors"
+Mammalia,Scandentia,Tupaia belangeri,XP_006164754.1,Tupaia chinensis,Tupaia chinensis,"Closest species based on timetree.org; 2 equidistant candidates, this one listed in NCBI ortholog table so so more likely to have been checked for errors"
