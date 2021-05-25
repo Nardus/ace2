@@ -36,12 +36,18 @@ most_common_value <- function(observed) {
 #'                  "False" indicating positives and negatives, respectively)
 #' 
 get_dist_to_closest_positive <- function(pairwise_dist_data, metadata) {
-  pairwise_dist_data %>% 
+  dist_data <- pairwise_dist_data %>% 
     left_join(metadata, by = c("other_seq" = "ace2_accession")) %>% 
     
     filter(.data$label == "True") %>%                                     # Only positive neighbours
-    filter(.data$ace2_accession != .data$other_seq) %>%                   # Exclude self
-    
+    filter(.data$ace2_accession != .data$other_seq)                       # Exclude self
+  
+  overall_dist <- dist_data %>% 
+    group_by(.data$ace2_accession) %>% 
+    summarise(closest_positive_overall = min(.data$distance), 
+              .groups = "drop")
+  
+  level_dists <- dist_data %>% 
     group_by(.data$ace2_accession, .data$evidence_level) %>% 
     summarise(closest_positive = min(.data$distance), 
               .groups = "drop") %>% 
@@ -49,6 +55,8 @@ get_dist_to_closest_positive <- function(pairwise_dist_data, metadata) {
                 names_from = "evidence_level", 
                 names_prefix = "closest_positive_l",
                 values_from = "closest_positive")
+  
+  full_join(overall_dist, level_dists, by = "ace2_accession")
 }
 
 

@@ -25,6 +25,10 @@ features_group$add_argument("--aa_distance", action = "store_const", const = TRU
 features_group$add_argument("--distance_to_humans", action = "store_const", const = TRUE, default = FALSE,
                             help = "include a feature measuring overall amino acid distance to human ACE2")
 
+features_group$add_argument("--distance_to_positive", action = "store_const", const = TRUE, default = FALSE,
+                            help = paste("include features measuring overall amino acid distance to",
+                                         "the closest positive (at each evidence level)"))
+
 features_group$add_argument("--binding_affinity", action = "store_const", const = TRUE, default = FALSE,
                             help = "include features measuring binding affinity to the SARS-CoV-2 spike protein")
 
@@ -65,7 +69,8 @@ other_opts_group$add_argument("--n_threads", type = "integer", default = 16,
 ## Check input
 INPUT <- parser$parse_args()
 
-if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$distance_to_humans, INPUT$binding_affinity))
+if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$distance_to_humans, 
+         INPUT$distance_to_positive, INPUT$binding_affinity))
   stop("No features selected. Run train_models.R --help for available feature sets")
 
 if (INPUT$replicates < 1)
@@ -88,6 +93,9 @@ if (INPUT$aa_distance)
 
 if (INPUT$distance_to_humans)
   feature_prefixes <- c(feature_prefixes, "distance_to_humans")
+
+if (INPUT$distance_to_positive)
+  feature_prefixes <- c(feature_prefixes, "closest_positive_")
 
 if (INPUT$binding_affinity)
   feature_prefixes <- c(feature_prefixes, "haddock_score")
