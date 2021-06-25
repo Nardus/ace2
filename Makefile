@@ -80,7 +80,7 @@ TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 # - Here using replicates to check whether feature selection is repeatable
 output/all_data/%/all_features/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
 		--distance_to_positive --binding_affinity \
 		--replicates 100 \
 		--random_seed 73049274
@@ -97,7 +97,7 @@ output/all_data/%/all_features/feature_usage.rds: output/all_data/%/all_features
 output/all_data/infection/feature_selection_%/training_results.rds: output/all_data/infection/all_features/feature_usage.rds \
 																	$(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R infection $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
 		--distance_to_positive --binding_affinity \
 		--random_seed 54278762 \
 		--select_features $* \
@@ -106,7 +106,7 @@ output/all_data/infection/feature_selection_%/training_results.rds: output/all_d
 output/all_data/shedding/feature_selection_%/training_results.rds: output/all_data/shedding/all_features/feature_usage.rds \
 																   $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R shedding $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
 		--distance_to_positive --binding_affinity \
 		--random_seed 27337413 \
 		--select_features $* \
@@ -138,7 +138,7 @@ train_feature_selection: $(FEATURE_MODELS)
 # - Level 2 (experimental infection)
 output/l2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
 		--distance_to_positive --binding_affinity \
 		--evidence_min 2 --evidence_max 2 \
 		--random_seed 23556284
@@ -146,7 +146,7 @@ output/l2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 # - Level 3-4 (cell culture)
 output/l3+4_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
 		--distance_to_positive --binding_affinity \
 		--evidence_min 3 --evidence_max 4 \
 		--random_seed 43564215
@@ -154,7 +154,7 @@ output/l3+4_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 # - Level 1 and 2 (i.e. exclude cell culture, in case it makes things worse)
 output/l1+2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --distance_to_humans \
+		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
 		--distance_to_positive --binding_affinity \
 		--evidence_min 1 --evidence_max 2 \
 		--random_seed 23556284

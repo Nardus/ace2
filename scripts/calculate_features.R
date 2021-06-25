@@ -5,14 +5,24 @@
 suppressPackageStartupMessages({
   library(dplyr)
   library(tidyr)
+  library(tibble)
   library(readr)
+  library(stringr)
   library(seqinr)
 })
 
 source("scripts/utils/aa_distance_utils.R")
+source("scripts/utils/aa_property_utils.R")
+
+N_CORES <- 16  # Number of parallel cores/threads allowed
+
 
 # ---- Load sequences + metadata ------------------------------------------------------------------
 ace2_alignment <- read.fasta("data/calculated/ace2_protein_alignment.fasta", seqtype = "AA")
+
+aa_properties <- read_aaindex_multi(index_names = c("hydrophobicity", "polarity", 
+                                                    "charge", "volume"),
+                                    base_path = "data/internal/aa_index_properties")
 
 # Data for known species
 infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
@@ -42,7 +52,7 @@ ace2_alignment <- ace2_alignment[unique(sequence_metadata$ace2_accession)]
 
 
 # ---- Pairwise distances -------------------------------------------------------------------------
-grantham_dists <- get_all_distances(ace2_alignment, type = "grantham", cores = 16)
+grantham_dists <- get_all_distances(ace2_alignment, type = "grantham", cores = N_CORES)
 
 dist_data <- tibble(ace2_accession = rownames(grantham_dists),
                     data.frame(grantham_dists)) %>% 
@@ -56,6 +66,8 @@ dist_to_humans <- dist_data %>%
   filter(.data$species == "Homo sapiens") %>% 
   select(.data$ace2_accession,
          distance_to_humans = .data$distance)
+
+stopifnot(nrow(dist_to_humans) == length(ace2_alignment))
 
 
 # ---- Variable sites (categorical) ---------------------------------------------------------------
@@ -85,9 +97,23 @@ colnames(alignment_mat) <- as.character(seq(1, ncol(alignment_mat)))
 variable_sites <- alignment_mat[, variant_counts > 1] %>% 
   as_tibble(rownames = "ace2_accession", .name_repair = ~ paste0("variable_site_", .x))
 
+stopifnot(nrow(variable_sites) == length(ace2_alignment))
+
+
+# ---- Variable sites (physico-chemical properties) -----------------------------------------------
+site_properties <- variable_sites %>% 
+  pivot_longer(!ace2_accession, names_to = "site", names_prefix = "variable_site_", 
+               values_to = "AA") %>% 
+  left_join(aa_properties, by = "AA") %>% 
+  select(-.data$AA) %>% 
+  pivot_wider(names_from = .data$site, values_from = c(hydrophobicity, polarity, charge, volume),
+              names_glue = "property_{.value}_{site}")
+
+stopifnot(nrow(site_properties) == length(ace2_alignment))
 
 
 # ---- Output -------------------------------------------------------------------------------------
 write_rds(dist_data, "data/calculated/features_pairwise_dists.rds")
 write_rds(dist_to_humans, "data/calculated/features_dist_to_humans.rds")
 write_rds(variable_sites, "data/calculated/features_variable_sites.rds")
+write_rds(site_properties, "data/calculated/features_site_properties.rds")
