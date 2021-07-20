@@ -3,11 +3,6 @@
 library(seqinr)
 library(readr)
 library(stringr)
-library(caret)
-
-PLOT_THEME <- theme_bw(8) +
-  theme(legend.key.height = unit(0.5, "lines"),
-        legend.margin = margin(l = -5, b = -5))
 
 
 # ---- Convert feature coordinates -----------------------------------------------------------------
