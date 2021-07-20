@@ -55,6 +55,34 @@ data/calculated/features_haddock_scores.rds: data/external/haddock_scores/ \
 	Rscript scripts/extract_haddock_scores.R
 
 
+# ---- Shapefiles for map figures ------------------------------------------------------------------
+# Continent outlines (from https://www.iucnredlist.org/resources/spatialtoolsanddata)
+data/external/iucn_base/Land_Masses_and_Ocean_Islands.zip:
+	mkdir -p $(@D)
+	curl -L -o $@ "https://spatial-data-2020onwards.s3.eu-west-1.amazonaws.com/WebsiteResources/Land_Masses_and_Ocean_Islands.zip"
+
+# IUCN range maps have to downloaded manually (registration needed), so check if data exists and 
+# display instructions if needed
+data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.zip:
+	$(warning $(file < data/iucn_range_maps/README.md))
+	$(error Missing file "MAMMALS_TERRESTRIAL_ONLY.zip")
+
+data/iucn_range_maps/MAMMALS_FRESHWATER.zip:
+	$(warning $(file < data/iucn_range_maps/README.md))
+	$(error Missing file "MAMMALS_FRESHWATER.zip")
+
+data/iucn_range_maps/MAMMALS_MARINE_AND_TERRESTRIAL.zip:
+	$(warning $(file < data/iucn_range_maps/README.md))
+	$(error Missing file "MAMMALS_MARINE_AND_TERRESTRIAL.zip")
+
+# Extract
+data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp: data/external/iucn_base/Land_Masses_and_Ocean_Islands.zip
+	unzip -u -d $(@D) $<
+
+data/iucn_range_maps/%.shp: data/iucn_range_maps/%.zip
+	unzip -u -d $(@D) $<
+
+
 # ---- Pre-processing ------------------------------------------------------------------------------
 # Clean metadata
 data/calculated/cleaned_infection_data.rds: data/internal/infection_data.xlsx data/internal/ace2_accessions.xlsx
@@ -220,6 +248,13 @@ output/plots/varimp_infection.png: $(FEATURE_MODELS)
 
 output/plots/varimp_shedding.png: $(FEATURE_MODELS)
 	Rscript scripts/plotting/plot_varimp_shedding.R
+
+
+# Maps
+output/plots/maps.pdf: data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
+					   data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
+					   data/iucn_range_maps/MAMMALS_MARINE_AND_TERRESTRIAL.shp
+	$(error Not implemented) # TODO
 
 
 .PHONY: plots
