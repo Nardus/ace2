@@ -22,6 +22,9 @@ features_group$add_argument("--aa_categorical", action = "store_const", const = 
 features_group$add_argument("--aa_distance", action = "store_const", const = TRUE, default = FALSE,
                             help = "include features representing variable amino acids as a distance to the closest positive.")
 
+features_group$add_argument("--aa_properties", action = "store_const", const = TRUE, default = FALSE,
+                            help = "include features representing variable amino acids by their physico-chemical properties.")
+
 features_group$add_argument("--distance_to_humans", action = "store_const", const = TRUE, default = FALSE,
                             help = "include a feature measuring overall amino acid distance to human ACE2")
 
@@ -44,11 +47,6 @@ data_group$add_argument("--evidence_max", type = "integer", choices = 1L:4L, def
 
 
 other_opts_group <- parser$add_argument_group("Other options")
-other_opts_group$add_argument("--replicates", type = "integer", default = 1,
-                              help = paste("number of repeats (default = 1). If replicates > 1,",
-                                           "the entire training and evaluation procedure will be",
-                                           "repeated."))
-
 other_opts_group$add_argument("--select_features", type = "integer",
                               help = paste("number of features to retain in model. If not specified, all",
                                            "features will be used. If specified, --feature_importance",
@@ -69,12 +67,10 @@ other_opts_group$add_argument("--n_threads", type = "integer", default = 16,
 ## Check input
 INPUT <- parser$parse_args()
 
-if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$distance_to_humans, 
+if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$aa_properties, INPUT$distance_to_humans, 
          INPUT$distance_to_positive, INPUT$binding_affinity))
   stop("No features selected. Run train_models.R --help for available feature sets")
 
-if (INPUT$replicates < 1)
-  stop("Invalid number of replicates")
 
 # Response variable:
 metadata_path <- sprintf("data/calculated/cleaned_%s_data.rds", INPUT$response_var)
@@ -91,8 +87,11 @@ if (INPUT$aa_categorical)
 if (INPUT$aa_distance)
   feature_prefixes <- c(feature_prefixes, "dist_variable_site_")
 
+if (INPUT$aa_properties)
+  feature_prefixes <- c(feature_prefixes, "property_")
+
 if (INPUT$distance_to_humans)
-  feature_prefixes <- c(feature_prefixes, "distance_to_humans")
+  feature_prefixes <- c(feature_prefixes, "distance_to_humans", "distance_to_rhinolophid")
 
 if (INPUT$distance_to_positive)
   feature_prefixes <- c(feature_prefixes, "closest_positive_")
@@ -108,33 +107,34 @@ suppressPackageStartupMessages({
   library(tidyr)
   library(readr)
   library(stringr)
+  
   library(xgboost)
-  library(caret)
-  library(parallel)
-  library(doParallel)
+  library(recipes)
+  library(rsample)
+  library(workflows)
+  library(dials)
+  library(tune)
+  library(yardstick)
+  library(parsnip)
+  
+  library(purrr)
+  library(future)
+  library(doFuture)
+  library(furrr)
   
   source("scripts/utils/aa_distance_utils.R")
   source("scripts/utils/feature_calc_utils.R")
-  source("scripts/utils/training_utils.R")
+  source("scripts/utils/feature_recipe_utils.R")
 })
 
 
-# Hyper-parameter search:
+# Constants:
 N_HYPER_PARAMS <- 100      # Number of hyper-parameter combinations to try
-
-# Tuning parameter values to try:
-# - N = N_HYPER_PARAMS random combinations of these will be tested 
-TUNING_PARAMETERS <- list(eta = c(0.001, 0.005, seq(0.01, 0.2, by = 0.02)),
-                          max_depth = seq(6, 15, by = 1),
-                          subsample = seq(0.6, 1.0, by = 0.1),
-                          colsample_bytree = seq(0.5, 1.0, by = 0.1),
-                          nrounds = seq(50, 250, by = 10), # Keeping this somewhat low to prevent over-fitting
-                          min_child_weight = seq(0, 10, by = 2),
-                          gamma = seq(0, 7, by = 0.5))
-
+N_BOOT <- 10               # Number of bootstraps to evaluate each hyper-parameter combination on
 
 set.seed(INPUT$random_seed)
-registerDoParallel(INPUT$n_threads)
+plan(strategy = multisession(workers = INPUT$n_threads))
+registerDoFuture()
 
 
 # ---- Data ---------------------------------------------------------------------------------------
@@ -177,24 +177,23 @@ if (!(INPUT$evidence_min == 1 & INPUT$evidence_max == 4)) {
 pairwise_dist_data <- read_rds("data/calculated/features_pairwise_dists.rds")
 dist_to_humans <- read_rds("data/calculated/features_dist_to_humans.rds")
 variable_sites <- read_rds("data/calculated/features_variable_sites.rds")
+site_properties <- read_rds("data/calculated/features_site_properties.rds")
 haddock_scores <- read_rds("data/calculated/features_haddock_scores.rds")
 
 # Combine
 final_data <- metadata %>% 
   left_join(dist_to_humans, by = "ace2_accession") %>% 
   left_join(variable_sites, by = "ace2_accession") %>% 
+  left_join(site_properties, by = "ace2_accession") %>% 
   left_join(haddock_scores, by = "species")
 
 
 stopifnot(nrow(final_data) == n_distinct(metadata$species))
 
-# Remove features which do not vary much in the current dataset:
-# - happens among "variable site" features in particular
-# - these columns will often be zero-variance once data are split, causing an error in caret
-remove_cols <- nearZeroVar(final_data, names = TRUE)
-remove_cols <- remove_cols[!remove_cols %in% c("evidence_level", "all_evidence_true", "all_evidence_false")]
+# Final processing
 final_data <- final_data %>% 
-  select(-all_of(remove_cols))
+  mutate(label = factor(.data$label, levels = c("True", "False"))) %>% 
+  mutate_if(is.character, as.factor)
 
 
 # ---- Feature selection data ---------------------------------------------------------------------
@@ -211,103 +210,179 @@ if (!is.null(INPUT$select_features)) {
 }
 
 
-# ---- Training -----------------------------------------------------------------------------------
+# ---- Pre-processing -----------------------------------------------------------------------------
+# Specify base recipe
+id_columns <- c("species", "all_evidence_true", "all_evidence_false", 
+                "evidence_level", "ace2_accession")
 
-# Tuning using 3 replicates of 5-fold CV in each iteration
-train_setup <- trainControl(method = "LOOCV",
-                            classProbs = TRUE,
-                            search = "random",
-                            savePredictions = "final")
-  
-# Calculate additional (training set-specific) features
-#  - These depend on the particular test set, but are correct by default for leave-one-out CV, 
-#    since the current virus is not included when summarizing its neighbours
-closest_positive <- get_dist_to_closest_positive(pairwise_dist_data, metadata)
-consensus_dists <- get_consensus_dist(variable_sites, variable_sites, metadata)
-  
-final_data <- final_data %>% 
-  left_join(closest_positive, by = "ace2_accession") %>% 
-  left_join(consensus_dists, by = "ace2_accession")
+preprocessing_recipe <- 
+  recipe(label ~ ., data = final_data) %>% 
+  update_role(all_of(id_columns), new_role = "ID") %>% 
+  step_distance_features(everything(),
+                         options = list(all_pairwise_dists = pairwise_dist_data, 
+                                        all_variable_sites = variable_sites, 
+                                        metadata = metadata),
+                         role = "predictor")
 
-# Final dataset: subset to match input options
-final_data <- final_data %>% 
-  mutate(across(where(is.character), as.factor)) %>% 
-  select(.data$species, .data$ace2_accession, .data$evidence_level, .data$label,
-         starts_with(feature_prefixes))
 
+# Subset features to match input options
 if (!is.null(INPUT$select_features)) {  # Need to do feature selection
   if (!all(final_features %in% colnames(final_data)))
     stop("Not all selected features found in data. Does feature selection list match input options?")
   
-  final_data <- final_data %>% 
-    select(.data$species, .data$ace2_accession, .data$evidence_level, .data$label,
-           all_of(final_features))
+  preprocessing_recipe <- 
+    preprocessing_recipe %>% 
+    step_rm(-has_role("ID"), -all_outcomes(), -all_of(final_features))
 }
 
-# Prepare data for caret
-final_data <- final_data %>% 
-  mutate(label = factor(.data$label, levels = c("True", "False"))) %>%  # Caret's twoClassSummary treats level 1 as "TRUE"
-  as.data.frame()
+preprocessing_recipe <- 
+  preprocessing_recipe %>% 
+  step_rm(-has_role("ID"), -all_outcomes(), -starts_with(feature_prefixes))
 
-train_data <- final_data %>% 
-  select(-.data$species, -.data$ace2_accession, -.data$evidence_level) # Remove non-feature columns
-  
-# Train
-dir.create(INPUT$output_path, recursive = TRUE)
+# Convert character values and remove invariant columns:
+preprocessing_recipe <-
+  preprocessing_recipe %>% 
+  step_zv(all_predictors(), -has_role("ID"), -all_outcomes()) %>% 
+  step_unknown(all_nominal(), -has_role("ID"), -all_outcomes()) %>% 
+  step_other(all_nominal(), -has_role("ID"), -all_outcomes(), threshold = 0.1) %>%  # Rare amino acids (frequency < 10%) collapsed 
+  step_dummy(all_nominal(), -has_role("ID"), -all_outcomes(), one_hot = TRUE)
 
-all_models <- list()
-all_predictions <- list()
 
-for (i in 1:INPUT$replicates) {
-  parameter_combos <- lapply(TUNING_PARAMETERS, sample, size = N_HYPER_PARAMS, replace = TRUE) %>% 
-    bind_rows() %>% 
-    as.data.frame()
+# Objects/settings needed to evaluate this recipe in parallel:
+recipe_opts <- furrr_options(globals = c(recipe_globals, "feature_prefixes"),
+                             packages = c("dplyr", "tidyr", "tune", "yardstick", "rsample"),
+                             seed = TRUE)
+
+
+# ---- Model setup --------------------------------------------------------------------------------
+xgboost_model <- 
+  boost_tree(mode = "classification",
+             learn_rate = tune(),
+             tree_depth = tune(),
+             sample_size = tune(),
+             mtry = tune(),
+             trees = tune(),
+             min_n = tune(),
+             loss_reduction = tune()) %>%
+  set_engine("xgboost", eval_metric = "logloss")
+
+
+tuning_parameters <- parameters(learn_rate(range = c(-5, -0.5)),          # eta
+                                tree_depth(),                             # max_depth
+                                sample_prop(range = c(0.6, 1.0)),         # subsample (sample_size(), but as proportion)
+                                mtry(),                                   # colsample_bynode, limits set based on number of features below
+                                trees(range = c(1L, 250L)),               # nrounds, keeping this low to prevent over-fitting (more boosting rounds also increases number of features used)
+                                min_n(range = c(5L, 10L)),                # min_child_weight, somewhat high - we don't want features used to predict just one or two cases (so at least 5)
+                                loss_reduction(range = c(-10, 10)))       # gamma, allow very high values, which would make model extremely conservative
+
+
+# ---- Training -----------------------------------------------------------------------------------
+# Set up cross-validation
+cv_folds <- nested_cv(data = final_data,
+                      outside = loo_cv(), 
+                      inside = bootstraps(times = N_BOOT, strata = label))
+
+# Record training data by preparing the pre-processing_recipe for each split 
+#  - Only re-calculating features for outer folds, since this takes a while
+cv_folds$recipes <- future_map(cv_folds$splits, prepper, recipe = preprocessing_recipe,
+                               .options = recipe_opts)
+
+# Apply to tuning to the inner resamples of each (outer) fold:
+tune_inner <- function(inner_splits, fold_recipe, model, param_grid) {
+  tuning_results <- tune_grid(object = model,
+                              preprocessor = fold_recipe,
+                              resamples = inner_splits,
+                              grid = param_grid,
+                              metrics = metric_set(accuracy, bal_accuracy),
+                              control = control_grid(allow_par = FALSE)) # Will parallelise the outer loop instead (so we can specify recipe_opts)
   
-  trained_model <- train(label ~ .,
-                         data = train_data,
-                         method = "xgbTree",
-                         metric = "Accuracy",
-                         trControl = train_setup,
-                         tuneGrid = parameter_combos,
-                         na.action = na.pass,
-                         nthread = 1)
-  
-  # Correct predictions
-  # TODO: may need to be optimized
-  cutoff <- 0.5 
-  
-  predictions <- trained_model$pred %>% 
-    mutate(pred = if_else(.data$True > cutoff, "True", "False"))
-  
-  # Save
-  all_models[[i]] <- trained_model
-  all_predictions[[i]] <- predictions
-  
-  # Binary version of model, compatible with future xgboost releases:
-  model_name <- sprintf("xgboost_model_%i.model", i)
-  xgb.save(trained_model$finalModel, file.path(INPUT$output_path, model_name))
+  tuning_results %>% 
+    select_best("accuracy")
 }
+
+parameter_combos <- tuning_parameters %>% 
+  finalize(final_data) %>% 
+  grid_max_entropy(size = N_HYPER_PARAMS)
+
+best_params <- future_map2(cv_folds$inner_resamples, cv_folds$recipes, tune_inner,
+                           model = xgboost_model, 
+                           param_grid = parameter_combos,
+                           .options = recipe_opts)
+
+
+# Fit final modelling workflow on all training data from each outer fold
+fit_final <- function(outer_split, fold_recipe, hyperparams, model) {
+  tuned_model <- finalize_model(model, hyperparams)
+  fold_training_data <- analysis(outer_split)
+  
+  workflow() %>% 
+    add_recipe(fold_recipe) %>% 
+    add_model(tuned_model) %>% 
+    fit(fold_training_data)
+}
+
+final_models <- future_pmap(.l = list(outer_split = cv_folds$splits, 
+                                      fold_recipe = cv_folds$recipes,
+                                      hyperparams = best_params), 
+                            .f = fit_final,
+                            model = xgboost_model,
+                            .options = recipe_opts)
+
+# Get predictions for the holdout in each outer fold
+predict_final <- function(outer_split, fold_recipe, fold_id, trained_workflow) {
+  fold_test_data <- assessment(outer_split)
+  
+  predict(trained_workflow, fold_test_data, type = "class") %>% 
+    bind_cols(predict(trained_workflow, fold_test_data, type = "prob")) %>% 
+    bind_cols(fold_test_data) %>% 
+    mutate(cv_fold = fold_id) %>% 
+    select(species, label, cv_fold,
+           prediction = .pred_class,
+           p_true = .pred_True,
+           p_false = .pred_False)
+}
+
+predictions <- future_pmap_dfr(.l = list(outer_split = cv_folds$splits, 
+                                         fold_recipe = cv_folds$recipes,
+                                         fold_id = cv_folds$id,
+                                         trained_workflow = final_models), 
+                               .f = predict_final,
+                               .options = recipe_opts)
+
+# Fit a final model on all data:
+# - Steps above gave an estimate of how well the *entire fitting procedure* works
+# - Use best params found across all outer replicates (and repeats) to fit final model
+outer_performance <- predictions %>% 
+  group_by(.data$cv_fold) %>% 
+  summarise(accuracy = accuracy_vec(truth = .data$label, estimate = .data$prediction),
+            .groups = "drop")
+
+best_id <- outer_performance %>% 
+  slice_max(accuracy) %>% 
+  slice_sample(n = 1) # If there are ties, choose randomly (many ties expected with LOOCV)
+
+best_id <- which(cv_folds$id == best_id$cv_fold)
+
+final_params <- best_params[[best_id]]
+
+final_workflow <- workflow() %>% 
+  add_recipe(preprocessing_recipe) %>% 
+  add_model(xgboost_model) %>%
+  finalize_workflow(final_params) %>% 
+  fit(final_data)
 
 
 # ---- Output -------------------------------------------------------------------------------------
+dir.create(INPUT$output_path, recursive = TRUE)
+
 # Predictions
-all_predictions <- bind_rows(all_predictions, .id = "iteration")
+write_rds(predictions, file.path(INPUT$output_path, "predictions.rds"))
 
-all_predictions <- final_data %>% 
-  rowid_to_column("rowIndex") %>% 
-  full_join(all_predictions, by = "rowIndex") %>% 
-  select(.data$iteration, .data$species, .data$ace2_accession, .data$label, .data$evidence_level,
-         prediction = .data$pred,
-         prob = .data$True)
+# Models associated with these predictions
+names(final_models) <- cv_folds$id
+write_rds(final_models, file.path(INPUT$output_path, "cv_models.rds"),
+          compress = "gz", compression = 9)
 
-stopifnot(nrow(all_predictions) == nrow(final_data)*INPUT$iterations)
-
-write_rds(all_predictions, file.path(INPUT$output_path, "predictions.rds"))
-
-
-# Model
-training_results <- list(trained_models = all_models,
-                         trainingData = final_data)
-
-write_rds(training_results, file.path(INPUT$output_path, "training_results.rds"), 
+# Final model workflow
+write_rds(final_workflow, file.path(INPUT$output_path, "trained_model_workflow.rds"), 
           compress = "gz", compression = 9)

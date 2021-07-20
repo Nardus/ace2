@@ -96,7 +96,8 @@ data/calculated/features_pairwise_dists.rds: data/calculated/ace2_protein_alignm
 	Rscript scripts/calculate_features.R
 
 
-# ---- Feature selection ---------------------------------------------------------------------------
+# ---- Training: full model -----------------------------------------------------------------------
+# Using all data and all features
 # Output format is "dataset/response_var/feature_set/*"
 
 TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
@@ -104,53 +105,13 @@ TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 						data/calculated/features_haddock_scores.rds
 
 
-# Full model (all features)
-# - Here using replicates to check whether feature selection is repeatable
 output/all_data/%/all_features/training_results.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
 		--distance_to_positive --binding_affinity \
-		--replicates 100 \
-		--random_seed 73049274
-
-output/all_data/%/all_features/feature_usage.rds: output/all_data/%/all_features/training_results.rds
-	Rscript scripts/select_features.R $(@D)
-
-.PRECIOUS: output/all_data/shedding/all_features/feature_usage.rds \
-		   output/all_data/infection/all_features/feature_usage.rds
+		--random_seed 77043274
 
 
-# Same training as above, but with number of features reduced
-# - last portion of folder name determines number of features kept
-output/all_data/infection/feature_selection_%/training_results.rds: output/all_data/infection/all_features/feature_usage.rds \
-																	$(TRAINING_REQUIREMENTS)
-	Rscript scripts/train_models.R infection $(@D) \
-		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
-		--distance_to_positive --binding_affinity \
-		--random_seed 54278762 \
-		--select_features $* \
-		--feature_importance $<
-		
-output/all_data/shedding/feature_selection_%/training_results.rds: output/all_data/shedding/all_features/feature_usage.rds \
-																   $(TRAINING_REQUIREMENTS)
-	Rscript scripts/train_models.R shedding $(@D) \
-		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
-		--distance_to_positive --binding_affinity \
-		--random_seed 27337413 \
-		--select_features $* \
-		--feature_importance $<
-
-# Enumerate combinations:
-#  - e.g. "output/all_data/infection/feature_selection_10/training_results.rds"
-FEATURE_COUNTS = 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
-RESPONSE_VARS = infection shedding
-
-FEATURE_MODELS = $(foreach a,$(RESPONSE_VARS), \
-					$(foreach b,$(FEATURE_COUNTS), \
-						output/all_data/$(a)/feature_selection_$(b)/training_results.rds ))
-
-.PHONY: train_feature_selection
-train_feature_selection: $(FEATURE_MODELS)
 
 
 # ---- Training on data subsets ------------------------------------------------------------------------------------
