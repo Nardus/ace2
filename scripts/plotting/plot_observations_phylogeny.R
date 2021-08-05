@@ -9,7 +9,7 @@ suppressPackageStartupMessages({
   library(phytools)
   library(ggplot2)
   library(ggtree)
-  library(ggbeeswarm)
+  library(vipor)
   library(ggsignif)
   library(grid)
   library(cowplot)
@@ -69,6 +69,27 @@ evidence_labels <- c("1" = "Observed infection",
 
 tree_midpoint <- max(cophenetic(timetree))/4
 
+# Prepare virus points
+prep_virus_data <- function(data) {
+  data %>% 
+    mutate(viruses = str_replace(.data$viruses, "SARS-CoV-1", "SARS-CoV"),
+           viruses = str_replace(.data$viruses, "ACE2-utilizing SARS-like CoV", "Other sarbecovirus"),
+           viruses = str_replace(.data$viruses, "SARS-like CoV", "Other sarbecovirus")) %>% 
+    select(.data$species, .data$viruses) %>% 
+    separate(.data$viruses, into = c("v1", "v2", "v3", "v4"), sep = ",", fill = "right") %>% 
+    pivot_longer(starts_with("v"), names_to = "index", values_to = "virus", values_drop_na = TRUE) %>% 
+    distinct(.data$species, .data$virus)
+}
+
+virus_data_infection <- infection_data %>% 
+  mutate(viruses = if_else(.data$infected == "True", .data$viruses_true, .data$viruses_false)) %>% 
+  prep_virus_data()
+
+virus_data_shedding <- shedding_data %>% 
+  mutate(viruses = if_else(.data$shedding == "True", .data$viruses_true, .data$viruses_false)) %>% 
+  prep_virus_data()
+
+
 # Tree
 tree_panel <- ggtree(timetree) +
   geom_rootedge(rootedge = 10) +
@@ -92,54 +113,61 @@ label_order <- tree_panel$data %>%
   as.vector()
 
 # Data panels
-infection_panel <- infection_data %>% 
-  mutate(species = factor(.data$species, levels = label_order),
-         infected = factor(.data$infected, levels = c("True", "False")),
-         evidence_level = factor(.data$evidence_level,
-                                 levels = c("1", "2", "3", "4"),
-                                 labels = evidence_labels)) %>% 
+plot_data_panel <- function(response_data, virus_data, label_var) {
+  response_data$label <- response_data[[label_var]]
   
-  ggplot(aes(x = infected, y = species, fill = factor(evidence_level))) +
-  geom_tile() +
-  scale_fill_brewer(palette = "YlGnBu", direction = - 1) +
-  scale_x_discrete(expand = expansion(add = 0)) +
-  scale_y_discrete(expand = expansion(add = 0.5)) +
-  labs(x = "Infected", fill = "Best evidence") +
-  theme(legend.position="none",
-        panel.grid.major.y = element_line(colour = "grey92"),
-        axis.title.y = element_blank(),
-        axis.text.y = element_blank(),
+  response_data <- response_data %>% 
+    mutate(species = factor(.data$species, levels = label_order),
+           label = factor(.data$label, levels = c("True", "False")),
+           evidence_level = factor(.data$evidence_level,
+                                   levels = c("1", "2", "3", "4"),
+                                   labels = evidence_labels))
+  
+  virus_data <- response_data %>% 
+    select(.data$species, .data$label, .data$evidence_level) %>% 
+    left_join(virus_data, by = "species") %>% 
+    mutate(x_offset = case_when(.data$virus == "SARS-CoV" ~ -0.22,
+                                .data$virus == "SARS-CoV-2" ~ 0,
+                                .data$virus == "Other sarbecovirus" ~ +0.22),
+           x_pos = as.numeric(.data$label) + .data$x_offset)
+  
+  ggplot(response_data, aes(x = label, y = species, fill = evidence_level)) +
+    geom_tile() +
+    geom_point(aes(x = x_pos, shape = virus), size = 0.9, colour = "grey30", virus_data) +
+    
+    scale_fill_brewer(palette = "YlGnBu", direction = - 1, guide = guide_legend(order = 1)) +
+    scale_shape_manual(values = VIRUS_SHAPES, guide = guide_legend(order = 2)) +
+    scale_x_discrete(expand = expansion(add = 0)) +
+    scale_y_discrete(expand = expansion(add = 0.5), drop = FALSE, position = "right") +
+    theme(legend.position="none",
+          panel.grid.major.y = element_line(colour = "grey92"),
+          axis.title.y = element_blank())
+}
+
+
+infection_panel <- plot_data_panel(infection_data, virus_data_infection, "infected") +
+  labs(x = "Infected") +
+  theme(axis.text.y = element_blank(),
         axis.ticks.y = element_blank(),
         plot.margin = margin(t = 5.5, r = 0, b = 5.5, l = 0))
 
 
-shedding_panel <- shedding_data %>% 
-  mutate(species = factor(.data$species, levels = label_order),
-         shedding = factor(.data$shedding, levels = c("True", "False")),
-         evidence_level = factor(.data$evidence_level,
-                                 levels = c("1", "2", "3", "4"),
-                                 labels = evidence_labels)) %>% 
-  
-  ggplot(aes(x = shedding, y = species, fill = evidence_level)) +
-  geom_tile() +
-  scale_fill_brewer(palette = "YlGnBu", direction = - 1, drop = FALSE) +
-  scale_x_discrete(expand = expansion(add = 0)) +
-  scale_y_discrete(expand = expansion(add = 0.5), drop = FALSE, position = "right") +
-  labs(x = "Shedding", fill = "Best evidence") +
-  theme(legend.position="none",
-        panel.grid.major.y = element_line(colour = "grey92"),
-        axis.title.y = element_blank(),
-        axis.text.y = element_text(face = "italic"),
+shedding_panel <- plot_data_panel(shedding_data, virus_data_shedding, "shedding") +
+  labs(x = "Shedding") +
+  theme(axis.text.y = element_text(face = "italic"),
         plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 2))
 
-# Combine
+
+# Construct legend
 shared_legend <- get_legend(
   infection_panel +
+    labs(shape = "Virus", fill = "Best evidence") +
     theme(legend.position = "left")
 )
 
+# Combine
 tree_panel2 <- tree_panel +
-  annotation_custom(textGrob("Million years (My)", gp = gpar(fontsize = 7)), 
+  annotation_custom(textGrob("Million years (My)", gp = gpar(fontsize = PLOT_THEME$text$size)), 
                     xmin = -tree_midpoint, xmax = -tree_midpoint,   # setting xmin = xmax centers label at xmin
                     ymin = -1.95, ymax = -1.95) +
   annotation_custom(shared_legend, xmin = -500, ymin = 20)
@@ -206,68 +234,52 @@ dist_data <- infection_data %>%
 
 
 # Plots
+plot_dists <- function(y_var, test_position, distances = dist_data, viruses = virus_data_infection) {
+  distances$adjusted_x = as.numeric(distances$infected) + offsetX(distances[[y_var]], distances$infected)
+  
+  viruses <- left_join(viruses, distances, by = "species")
+  
+  ggplot(distances, aes_string(x = "infected", y = y_var)) +
+    geom_boxplot(outlier.colour = NA) + 
+    
+    geom_point(aes(x = adjusted_x, fill = factor(evidence_level), shape = virus), 
+               colour = "grey40", size = 1, stroke = 0.3, data = viruses) +
+    
+    geom_signif(comparisons = list(c("True", "False")), 
+                test = "ks.test", test.args = list(exact = FALSE),
+                size = 0.3, tip_length = 0.014, textsize = 1.8, vjust = -0.2, 
+                y_position = test_position) +
+    
+    scale_fill_brewer(palette = "YlGnBu", direction = - 1, labels = evidence_labels) +
+    scale_shape_manual(values = VIRUS_SHAPES) +
+    theme(legend.position = "none")
+}
+
+
 # - ACE distances
-dist_h_plot <- ggplot(dist_data, aes(x = infected, y = ace2_dist_human)) +
-  geom_boxplot(outlier.colour = NA) + 
-  geom_quasirandom(aes(fill = factor(evidence_level)), shape = 21, size = 1.2, colour = "grey30") +
-  
-  geom_signif(comparisons = list(c("True", "False")), 
-              test = "ks.test", test.args = list(exact = FALSE),
-              size = 0.3, tip_length = 0.014, textsize = 1.8, vjust = -0.2, y_position = 20800) +
-  
-  scale_fill_brewer(palette = "YlGnBu", direction = - 1,
-                    labels = c(evidence_labels)) +
+dist_h_plot <- plot_dists("ace2_dist_human", test_position = 20800) +
   scale_y_continuous(limits = c(0, 23800), expand = expansion(add = 200)) +
   labs(x = "Infected", y = "ACE2 amino acid\ndistance to humans", fill = "Best evidence") + 
-  theme(legend.position = "none",
-        axis.text.x = element_blank(),
+  theme(axis.text.x = element_blank(),
         axis.title.x = element_blank(),
         plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
 
-dist_r_plot <- ggplot(dist_data, aes(x = infected, y = ace2_dist_rhinolophid)) +
-  geom_boxplot(outlier.colour = NA) + 
-  geom_quasirandom(aes(fill = factor(evidence_level)), shape = 21, size = 1.2, colour = "grey30") +
-  
-  geom_signif(comparisons = list(c("True", "False")), 
-              test = "ks.test", test.args = list(exact = FALSE),
-              size = 0.3, tip_length = 0.014, textsize = 1.8, vjust = -0.2, y_position = 20800) +
-  
-  scale_fill_brewer(palette = "YlGnBu", direction = - 1,
-                    labels = c(evidence_labels)) +
+dist_r_plot <- plot_dists("ace2_dist_rhinolophid", test_position = 20800) +
   scale_y_continuous(limits = c(0, 23800), expand = expansion(add = 200)) +
   labs(x = "Infected", y = "Mean amino acid distance\nto Rhinolophid species", fill = "Best evidence") + 
   theme(legend.position = "none")
 
 
 # - Phylogenetic clustering
-clust_pos_plot <- ggplot(dist_data, aes(x = infected, y = closest_positive_overall)) +
-  geom_boxplot(outlier.colour = NA) + 
-  geom_quasirandom(aes(fill = factor(evidence_level)), shape = 21, size = 1.2, colour = "grey30") +
-  
-  geom_signif(comparisons = list(c("True", "False")), 
-              test = "ks.test", test.args = list(exact = FALSE),
-              size = 0.3, tip_length = 0.014, textsize = 1.8, vjust = -0.2, y_position = 630) +
-  
-  scale_fill_brewer(palette = "YlGnBu", direction = - 1,
-                    labels = c(evidence_labels)) +
+clust_pos_plot <- plot_dists("closest_positive_overall", test_position = 630) +
   scale_y_continuous(limits = c(0, 700), expand = expansion(add = 20)) +
-  labs(x = "Infected", y = "Phylogenetic distance\nto closest infected\nneighbour (My)", 
-       fill = "Best evidence") + 
+  labs(x = "Infected", y = "Phylogenetic distance\nto closest infected\nneighbour (My)") + 
   theme(legend.position = "none",
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
         plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
 
-clust_neg_plot <- ggplot(dist_data, aes(x = infected, y = closest_negative_overall)) +
-  geom_boxplot(outlier.colour = NA) + 
-  geom_quasirandom(aes(fill = factor(evidence_level)), shape = 21, size = 1.2, colour = "grey30") +
-  
-  geom_signif(comparisons = list(c("True", "False")), 
-              test = "ks.test", test.args = list(exact = FALSE),
-              size = 0.3, tip_length = 0.014, textsize = 1.8, vjust = -0.2, y_position = 630) +
-  
-  scale_fill_brewer(palette = "YlGnBu", direction = - 1,
-                    labels = c(evidence_labels)) +
+clust_neg_plot <- plot_dists("closest_negative_overall", test_position = 630) +
   scale_y_continuous(limits = c(0, 700), expand = expansion(add = 20)) +
   labs(x = "Infected", y = "Phylogenetic distance\nto closest non-infected\nneighbour (My)", 
        fill = "Best evidence") + 
@@ -378,10 +390,13 @@ final_figure <- plot_grid(overview_plot, side_panels2,
                           labels = c("A", ""), label_size = 9, hjust = -0.5)
 
 
-dir.create("output/plots", recursive = TRUE)
+dir.create("output/plots/intermediates", recursive = TRUE)
 ggsave2("output/plots/raw_data_overview.pdf", 
-        final_figure,
+        final_figure, 
         width = 7, height = 7)
+
+# Intermediate values for other plots
+saveRDS(virus_data_infection, "output/plots/intermediates/virus_data_infection.rds")
 
 
 # ---- Values mentioned in text --------------------------------------------------------------------

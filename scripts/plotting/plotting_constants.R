@@ -9,3 +9,8 @@ PLOT_THEME <- theme_bw(base_size = 7) +
         plot.background = element_blank())
 
 theme_set(PLOT_THEME)
+
+
+# Symbols
+# - These can be combined to illustrate multiple viruses in a given host
+VIRUS_SHAPES <- c("SARS-CoV" = 24, "SARS-CoV-2" = 25, "Other sarbecovirus" = 21)
