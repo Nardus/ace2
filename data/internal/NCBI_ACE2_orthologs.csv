@@ -21,7 +21,7 @@ Gene ID,Gene symbol,Description,Scientific name,Common name,RefSeq Transcript ac
 100541186,ACE2,angiotensin converting enzyme 2,Meleagris gallopavo,turkey,XM_019612009.2,XP_019467554.1,11117526,model,,default-seq
 100602708,ACE2,angiotensin converting enzyme 2,Nomascus leucogenys,northern white-cheeked gibbon,XM_003261084.3,XP_003261132.2,,model,,default-seq
 100663153,ACE2,angiotensin converting enzyme 2,Loxodonta africana,African savanna elephant,XM_023555192.1,XP_023410960.1,11117526,model,,default-seq
-100772552,Ace2,angiotensin converting enzyme 2,Cricetulus griseus,Chinese hamster,XM_003503235.5,XP_003503283.1,11117526,model,,default-seq
+100772552,Ace2,angiotensin converting enzyme 2,Cricetulus griseus,Chinese hamster,XM_003503235.5,XP_027288607.1,11117526,model,,default-seq
 100917420,ACE2,angiotensin converting enzyme 2,Sarcophilus harrisii,Tasmanian devil,XM_031958965.1,XP_031814825.1,,model,,default-seq
 100951881,ACE2,angiotensin converting enzyme 2,Otolemur garnettii,small-eared galago,XM_003791864.2,XP_003791912.1,11117526,model,,default-seq
 100970340,ACE2,angiotensin converting enzyme 2,Pan paniscus,pygmy chimpanzee,XM_008974180.2,XP_008972428.2,,model,,default-seq
