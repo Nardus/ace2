@@ -13,7 +13,7 @@ Gene ID,Gene symbol,Description,Scientific name,Common name,RefSeq Transcript ac
 100085223,ACE2,angiotensin converting enzyme 2,Ornithorhynchus anatinus,platypus,XM_001515547.5,XP_001515597.2,11117526,model,,default-seq
 100144303,ACE2,angiotensin converting enzyme 2,Sus scrofa,pig,NM_001123070.1,NP_001116542.1,11117526,curated,,default-seq
 100171441,ACE2,angiotensin converting enzyme 2,Pongo abelii,Sumatran orangutan,NM_001131132.2,NP_001124604.1,11117526,curated,,default-seq
-100232752,ACE2,angiotensin converting enzyme 2,Taeniopygia guttata,zebra finch,XM_002194267.4,XP_002194303.4,,model,,default-seq
+100232752,ACE2,angiotensin converting enzyme 2,Taeniopygia guttata,zebra finch,XM_002194267.4,XP_002194303.5,,model,,default-seq
 100302675,Ace2,angiotensin converting enzyme 2,Cavia porcellus,domestic guinea pig,XM_023562040.1,XP_023417808.1,11117526,model,,default-seq
 100327258,ACE2,angiotensin converting enzyme 2,Oryctolagus cuniculus,rabbit,XM_002719845.3,XP_002719891.1,11117526,model,,default-seq
 100408882,ACE2,angiotensin converting enzyme 2,Callithrix jacchus,white-tufted-ear marmoset,XM_008988993.3,XP_008987241.1,11117526,model,,default-seq
