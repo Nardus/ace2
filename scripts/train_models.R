@@ -65,7 +65,13 @@ other_opts_group$add_argument("--n_threads", type = "integer", default = 16,
 
 
 ## Check input
-INPUT <- parser$parse_args()
+INPUT <- parser$parse_args(
+  c("infection", "output/all_data/infection/all_features",
+    "--aa_categorical", "--aa_distance", #"--aa_properties",
+    "--distance_to_humans", "--distance_to_positive", 
+    "--binding_affinity",
+    "--random_seed", "73049274")
+)
 
 if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$aa_properties, INPUT$distance_to_humans, 
          INPUT$distance_to_positive, INPUT$binding_affinity))
@@ -110,6 +116,7 @@ suppressPackageStartupMessages({
   
   library(xgboost)
   library(recipes)
+  library(themis)
   library(rsample)
   library(workflows)
   library(dials)
@@ -130,7 +137,7 @@ suppressPackageStartupMessages({
 
 # Constants:
 N_HYPER_PARAMS <- 100      # Number of hyper-parameter combinations to try
-N_BOOT <- 10               # Number of bootstraps to evaluate each hyper-parameter combination on
+N_BOOT <- 5               # Number of bootstraps to evaluate each hyper-parameter combination on
 
 set.seed(INPUT$random_seed)
 plan(strategy = multisession(workers = INPUT$n_threads))
@@ -239,6 +246,13 @@ preprocessing_recipe <-
   preprocessing_recipe %>% 
   step_rm(-has_role("ID"), -all_outcomes(), -starts_with(feature_prefixes))
 
+
+# Downsample (if this is the training set)
+preprocessing_recipe <- 
+  preprocessing_recipe %>% 
+  step_smote(label)
+
+
 # Convert character values and remove invariant columns:
 preprocessing_recipe <-
   preprocessing_recipe %>% 
@@ -250,7 +264,7 @@ preprocessing_recipe <-
 
 # Objects/settings needed to evaluate this recipe in parallel:
 recipe_opts <- furrr_options(globals = c(recipe_globals, "feature_prefixes"),
-                             packages = c("dplyr", "tidyr", "tune", "yardstick", "rsample"),
+                             packages = c("dplyr", "tidyr", "themis", "tune", "yardstick", "rsample"),
                              seed = TRUE)
 
 
@@ -267,7 +281,7 @@ xgboost_model <-
   set_engine("xgboost", eval_metric = "logloss")
 
 
-tuning_parameters <- parameters(learn_rate(range = c(-5, -0.5)),          # eta
+tuning_parameters <- parameters(learn_rate(range = c(-5, -0.7)),          # eta
                                 tree_depth(),                             # max_depth
                                 sample_prop(range = c(0.6, 1.0)),         # subsample (sample_size(), but as proportion)
                                 mtry(),                                   # colsample_bynode, limits set based on number of features below
@@ -293,11 +307,11 @@ tune_inner <- function(inner_splits, fold_recipe, model, param_grid) {
                               preprocessor = fold_recipe,
                               resamples = inner_splits,
                               grid = param_grid,
-                              metrics = metric_set(accuracy, bal_accuracy),
+                              metrics = metric_set(bal_accuracy),
                               control = control_grid(allow_par = FALSE)) # Will parallelise the outer loop instead (so we can specify recipe_opts)
   
   tuning_results %>% 
-    select_best("accuracy")
+    select_best()
 }
 
 parameter_combos <- tuning_parameters %>% 
@@ -372,6 +386,18 @@ final_workflow <- workflow() %>%
   fit(final_data)
 
 
+# ---- Feature importance --------------------------------------------------------------------------
+shap_values <- predict(final_workflow, final_data, type = "raw", opts = list(predcontrib = TRUE))
+
+feature_importance <- shap_values %>% 
+  data.frame() %>% 
+  pivot_longer(everything(), names_to = "feature", values_to = "shap") %>% 
+  group_by(feature) %>% 
+  summarise(importance = mean(abs(shap))) %>% 
+  filter(.data$feature != "BIAS") %>% 
+  arrange(-importance)
+
+
 # ---- Output -------------------------------------------------------------------------------------
 dir.create(INPUT$output_path, recursive = TRUE)
 
@@ -386,3 +412,8 @@ write_rds(final_models, file.path(INPUT$output_path, "cv_models.rds"),
 # Final model workflow
 write_rds(final_workflow, file.path(INPUT$output_path, "trained_model_workflow.rds"), 
           compress = "gz", compression = 9)
+
+# Feature usage in final workflow
+write_rds(shap_values, file.path(INPUT$output_path, "shap_values.rds"),
+          compress = "gz", compression = 9)
+write_rds(feature_importance, file.path(INPUT$output_path, "feature_importance.rds"))
