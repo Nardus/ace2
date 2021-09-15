@@ -70,7 +70,8 @@ INPUT <- parser$parse_args(
     "--aa_categorical", "--aa_distance", #"--aa_properties",
     "--distance_to_humans", "--distance_to_positive", 
     "--binding_affinity",
-    "--random_seed", "73049274")
+    "--random_seed", "73049274",
+    "--n_threads", "8")
 )
 
 if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$aa_properties, INPUT$distance_to_humans, 
@@ -247,12 +248,6 @@ preprocessing_recipe <-
   step_rm(-has_role("ID"), -all_outcomes(), -starts_with(feature_prefixes))
 
 
-# Downsample (if this is the training set)
-preprocessing_recipe <- 
-  preprocessing_recipe %>% 
-  step_smote(label)
-
-
 # Convert character values and remove invariant columns:
 preprocessing_recipe <-
   preprocessing_recipe %>% 
@@ -294,21 +289,56 @@ tuning_parameters <- parameters(learn_rate(range = c(-5, -0.7)),          # eta
 # Set up cross-validation
 cv_folds <- nested_cv(data = final_data,
                       outside = loo_cv(), 
-                      inside = bootstraps(times = N_BOOT, strata = label))
+                      inside = validation_split(strata = label, prop = 0.75))
 
 # Record training data by preparing the pre-processing_recipe for each split 
 #  - Only re-calculating features for outer folds, since this takes a while
 cv_folds$recipes <- future_map(cv_folds$splits, prepper, recipe = preprocessing_recipe,
                                .options = recipe_opts)
 
-# Apply to tuning to the inner resamples of each (outer) fold:
+# Apply to tuning to the inner splits of each (outer) fold:
 tune_inner <- function(inner_splits, fold_recipe, model, param_grid) {
+  test_cutoff <- function(split_result, cutoff) {
+    # split_result should represent tuning results from a single param combination and data split
+    split_result %>% 
+      mutate(new_prediction = if_else(.data$.pred_True > cutoff, "True", "False"),
+             new_prediction = factor(new_prediction, levels = c("True", "False"))) %>% 
+      group_by(.data$label, .add = TRUE) %>% 
+      summarise(class_acc = accuracy_vec(truth = .data$label, estimate = .data$new_prediction),
+                .groups = "drop_last") %>% 
+      summarise(.estimate = sum(.data$class_acc)/2,
+                .groups = "keep") %>% 
+      mutate(.metric = "balanced_accuracy",
+             .estimator = "binary",
+             cutoff = cutoff)
+  }
+  
+  find_best_cutoff <- function(split_result, cutoffs = seq(0.15, 0.95, by = 0.01)) {
+    sapply(cutoffs, test_cutoff, split_result = split_result, simplify = FALSE) %>% 
+      bind_rows() %>% 
+      slice_max(.data$.estimate, with_ties = TRUE) %>% 
+      slice_sample(n = 1) # Choose randomly in case of ties
+  }
+  
   tuning_results <- tune_grid(object = model,
                               preprocessor = fold_recipe,
                               resamples = inner_splits,
                               grid = param_grid,
-                              metrics = metric_set(bal_accuracy),
-                              control = control_grid(allow_par = FALSE)) # Will parallelise the outer loop instead (so we can specify recipe_opts)
+                              metrics = metric_set(roc_auc), # Not used, but triggers return of quantitative predictions for cutoff optimisation below
+                              control = control_grid(save_pred = TRUE,
+                                                     allow_par = FALSE)) # Will parallelise the outer loop instead (so we can specify recipe_opts)
+  
+  # Test cutoffs on the same training/validation splits:
+  for (i in 1:nrow(tuning_results)) {  # Loop over splits
+    cutoff_metrics <- tuning_results[i, ] %>% 
+      unnest(.data$.predictions) %>% 
+      group_by(.data$.config) %>% 
+      find_best_cutoff()
+    
+    tuning_results$.metrics[[i]] <- tuning_results$.metrics[[i]] %>% 
+      select(-starts_with("."), .config) %>% 
+      full_join(cutoff_metrics, by = ".config")
+  } 
   
   tuning_results %>% 
     select_best()
@@ -343,15 +373,17 @@ final_models <- future_pmap(.l = list(outer_split = cv_folds$splits,
                             .options = recipe_opts)
 
 # Get predictions for the holdout in each outer fold
-predict_final <- function(outer_split, fold_recipe, fold_id, trained_workflow) {
+predict_final <- function(outer_split, fold_recipe, fold_id, trained_workflow, params) {
+  cutoff <- params$cutoff
   fold_test_data <- assessment(outer_split)
   
-  predict(trained_workflow, fold_test_data, type = "class") %>% 
-    bind_cols(predict(trained_workflow, fold_test_data, type = "prob")) %>% 
+  predict(trained_workflow, fold_test_data, type = "prob") %>% 
     bind_cols(fold_test_data) %>% 
-    mutate(cv_fold = fold_id) %>% 
-    select(species, label, cv_fold,
-           prediction = .pred_class,
+    mutate(cv_fold = fold_id,
+           cutoff = cutoff,
+           prediction = if_else(.data$.pred_True > cutoff, "True", "False"),
+           prediction = factor(.data$prediction, levels = c("True", "False"))) %>% 
+    select(species, label, cv_fold, prediction, cutoff,
            p_true = .pred_True,
            p_false = .pred_False)
 }
@@ -359,7 +391,8 @@ predict_final <- function(outer_split, fold_recipe, fold_id, trained_workflow) {
 predictions <- future_pmap_dfr(.l = list(outer_split = cv_folds$splits, 
                                          fold_recipe = cv_folds$recipes,
                                          fold_id = cv_folds$id,
-                                         trained_workflow = final_models), 
+                                         trained_workflow = final_models,
+                                         params = best_params), 
                                .f = predict_final,
                                .options = recipe_opts)
 
