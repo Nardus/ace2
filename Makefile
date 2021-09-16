@@ -118,15 +118,56 @@ TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 						data/calculated/features_pairwise_dists.rds \
 						data/calculated/features_haddock_scores.rds
 
+ALL_FEATURE_SETS =	--aa_categorical \
+					--aa_distance \
+					--aa_properties \
+					--distance_to_humans \
+					--distance_to_positive \
+					--binding_affinity
 
 output/all_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
-		--distance_to_positive --binding_affinity \
+		$(ALL_FEATURE_SETS) \
 		--random_seed 77043274 \
 		--n_threads 8
 
 
+# ---- Training: individual feature sets ----------------------------------------------------------
+output/all_data/%/aa_categorical/predictions.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_categorical \
+		--random_seed 45323357 \
+		--n_threads 10
+
+output/all_data/%/aa_distance/predictions.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_distance \
+		--random_seed 58498184 \
+		--n_threads 10
+
+output/all_data/%/aa_properties/predictions.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_properties \
+		--random_seed 54564253 \
+		--n_threads 10
+
+output/all_data/%/distance_to_humans/predictions.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--distance_to_humans \
+		--random_seed 75325883 \
+		--n_threads 10
+
+output/all_data/%/distance_to_positive/predictions.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--distance_to_positive \
+		--random_seed 18681045 \
+		--n_threads 10
+
+output/all_data/%/binding_affinity/predictions.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--binding_affinity \
+		--random_seed 11386168 \
+		--n_threads 10
 
 
 # ---- Training on data subsets ------------------------------------------------------------------------------------
@@ -140,53 +181,68 @@ output/all_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 #  can't be included separately here)
 
 # - Level 2 (experimental infection)
-output/l2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
+output/l2_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
-		--distance_to_positive --binding_affinity \
+		$(ALL_FEATURE_SETS) \
 		--evidence_min 2 --evidence_max 2 \
-		--random_seed 23556284
+		--random_seed 23556284 \
+		--n_threads 8
 
 # - Level 3-4 (cell culture)
-output/l3+4_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
+output/l3+4_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
-		--distance_to_positive --binding_affinity \
+		$(ALL_FEATURE_SETS) \
 		--evidence_min 3 --evidence_max 4 \
-		--random_seed 43564215
+		--random_seed 43564215 \
+		--n_threads 8
 
 # - Level 1 and 2 (i.e. exclude cell culture, in case it makes things worse)
-output/l1+2_data/%/combined/training_results.rds: $(TRAINING_REQUIREMENTS)
+output/l1+2_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
-		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
-		--distance_to_positive --binding_affinity \
+		$(ALL_FEATURE_SETS) \
 		--evidence_min 1 --evidence_max 2 \
-		--random_seed 23556284
+		--random_seed 28641685 \
+		--n_threads 8
 
 
-# Enumerate combinations:
+# ---- Enemurate training combinations ------------------------------------------------------------
+# Feature subsets
+RESPONSE_VARS = infection shedding
+FEATURE_SET_NAMES = $(subst --, , $(ALL_FEATURE_SETS))  # Remove leading "--"
+
+FEATURE_FOLDERS =	$(foreach a,$(RESPONSE_VARS), \
+						$(foreach b,$(FEATURE_SET_NAMES), \
+							$(a)/$(b) ))
+
+FEATURE_MODELS = $(patsubst %, output/all_data/%/predictions.rds, $(FEATURE_FOLDERS))
+
+
+# Data subsets (includes full data):
 # - For l3+4 (cell culture), shedding does not apply
 DATASETS = all_data l2_data l1+2_data
 
-OUT_FOLDERS = $(foreach a,$(DATASETS), \
-				$(foreach b,$(RESPONSE_VARS), \
-					$(a)/$(b) ))
+DATA_FOLDERS =	$(foreach a,$(DATASETS), \
+					$(foreach b,$(RESPONSE_VARS), \
+						$(a)/$(b) ))
 
-L1_L2_MODELS = $(patsubst %, output/%/combined/training_results.rds, $(OUT_FOLDERS))
-L3_MODELS = output/l3+4_data/infection/combined/training_results.rds
+L1_L2_MODELS = $(patsubst %, output/%/all_features/predictions.rds, $(DATA_FOLDERS))
+L3_MODELS = output/l3+4_data/infection/all_features/predictions.rds
 
-.PHONY: train_all_features train
-train_all_features: $(L1_L2_MODELS) $(L3_MODELS)
 
-train: train_all_features \
-       train_feature_selection
+# Shortcuts:
+.PHONY: train_feature_subsets train_data_subsets train
+train_feature_subsets: $(FEATURE_MODELS)
+train_data_subsets: $(L1_L2_MODELS) $(L3_MODELS)
+
+train:	train_feature_subsets \
+		train_data_subsets
 
 # Fitted models should never be deleted (even when produced as an intermediate file
 # for another step):
-.PRECIOUS: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS) \
-		   output/all_data/infection/all_features/training_results.rds \
-		   output/all_data/shedding/all_features/training_results.rds
+.PRECIOUS: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
 
+
+# TODO: updates needed below
 
 # ---- Predict other species for which ACE2 sequences are available --------------------------------
 
