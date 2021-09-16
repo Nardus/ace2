@@ -6,8 +6,7 @@ all: output/plots/performance.png
 
 
 # ---- Data ----------------------------------------------------------------------------------------
-# Spike protein amino acid alignment
-
+# Spike protein amino acid sequences
 # - Check that accession csv is up to date
 data/internal/ace2_accessions.csv: data/internal/ace2_accessions.xlsx
 	$(error ace2_accessions.csv is out of date - re-export the matching excel file)
@@ -33,10 +32,6 @@ data/external/ace2_protein_sequences.fasta: data/calculated/all_accessions.txt
 		efetch -format fasta > $@
 	awk -f scripts/utils/find_missing_accessions.awk $< $@
 
-# - Align
-data/calculated/ace2_protein_alignment.fasta: data/external/ace2_protein_sequences.fasta
-	mkdir -p data/calculated
-	mafft-einsi --thread 16 $< > $@
 
 
 # ---- Binding affinity data -----------------------------------------------------------------------
@@ -83,7 +78,26 @@ data/iucn_range_maps/%.shp: data/iucn_range_maps/%.zip
 	unzip -u -d $(@D) $<
 
 
+# ---- ACE2 alignment -----------------------------------------------------------------------
+# Align
+data/calculated/ace2_protein_alignment.fasta: data/external/ace2_protein_sequences.fasta
+	mkdir -p data/calculated
+	mafft-einsi --thread 16 $< > $@
+
+# Phylogeny
+data/calculated/gene_tree/ace2_genetree.treefile: data/calculated/ace2_protein_alignment.fasta
+	mkdir -p data/calculated/gene_tree
+	iqtree -nt 16 -s $< -bb 1000 -pre $(@D)/ace_genetree
+
+
 # ---- Pre-processing ------------------------------------------------------------------------------
+# Retrieve taxonomy
+data/calculated/taxonomy.rds: data/internal/NCBI_ACE2_orthologs.csv \
+							  data/internal/ace2_accessions.csv
+	mkdir -p data/calculated
+	Rscript scripts/build_taxonomy_table.R
+
+
 # Clean metadata
 data/calculated/cleaned_infection_data.rds: data/internal/infection_data.xlsx data/internal/ace2_accessions.xlsx
 	mkdir -p data/calculated
@@ -105,11 +119,12 @@ TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 						data/calculated/features_haddock_scores.rds
 
 
-output/all_data/%/all_features/training_results.rds: $(TRAINING_REQUIREMENTS)
+output/all_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_categorical --aa_distance --aa_properties --distance_to_humans \
 		--distance_to_positive --binding_affinity \
-		--random_seed 77043274
+		--random_seed 77043274 \
+		--n_threads 8
 
 
 

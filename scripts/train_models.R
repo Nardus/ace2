@@ -47,16 +47,6 @@ data_group$add_argument("--evidence_max", type = "integer", choices = 1L:4L, def
 
 
 other_opts_group <- parser$add_argument_group("Other options")
-other_opts_group$add_argument("--select_features", type = "integer",
-                              help = paste("number of features to retain in model. If not specified, all",
-                                           "features will be used. If specified, --feature_importance",
-                                           "is also required."))
-
-other_opts_group$add_argument("--feature_importance", type = "character",
-                              help = paste("location of a variable importance table to be used for",
-                                           "feature selection prior to training. Ignored if", 
-                                           "--select_features is not specified"))
-
 other_opts_group$add_argument("--random_seed", type = "integer", default = trunc(runif(1, max = 1e5)),
                               help = "random seed to use (default: a random integer between 0 and 1e5)")
 
@@ -65,14 +55,7 @@ other_opts_group$add_argument("--n_threads", type = "integer", default = 16,
 
 
 ## Check input
-INPUT <- parser$parse_args(
-  c("infection", "output/all_data/infection/all_features",
-    "--aa_categorical", "--aa_distance", #"--aa_properties",
-    "--distance_to_humans", "--distance_to_positive", 
-    "--binding_affinity",
-    "--random_seed", "73049274",
-    "--n_threads", "8")
-)
+INPUT <- parser$parse_args()
 
 if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$aa_properties, INPUT$distance_to_humans, 
          INPUT$distance_to_positive, INPUT$binding_affinity))
@@ -138,7 +121,6 @@ suppressPackageStartupMessages({
 
 # Constants:
 N_HYPER_PARAMS <- 100      # Number of hyper-parameter combinations to try
-N_BOOT <- 5               # Number of bootstraps to evaluate each hyper-parameter combination on
 
 set.seed(INPUT$random_seed)
 plan(strategy = multisession(workers = INPUT$n_threads))
@@ -204,20 +186,6 @@ final_data <- final_data %>%
   mutate_if(is.character, as.factor)
 
 
-# ---- Feature selection data ---------------------------------------------------------------------
-if (!is.null(INPUT$select_features)) {
-  feature_importance <- readRDS(INPUT$feature_importance)
-  
-  if (nrow(feature_importance) <= INPUT$select_features)
-    stop("Feature importance list contains less than the requested number of features")
-  
-  final_features <- feature_importance %>% 
-    slice_max(n = INPUT$select_features, order_by = .data$importance, with_ties = FALSE) %>% 
-    filter(!.data$feature %in% remove_cols) %>% 
-    pull(.data$feature)
-}
-
-
 # ---- Pre-processing -----------------------------------------------------------------------------
 # Specify base recipe
 id_columns <- c("species", "all_evidence_true", "all_evidence_false", 
@@ -234,15 +202,6 @@ preprocessing_recipe <-
 
 
 # Subset features to match input options
-if (!is.null(INPUT$select_features)) {  # Need to do feature selection
-  if (!all(final_features %in% colnames(final_data)))
-    stop("Not all selected features found in data. Does feature selection list match input options?")
-  
-  preprocessing_recipe <- 
-    preprocessing_recipe %>% 
-    step_rm(-has_role("ID"), -all_outcomes(), -all_of(final_features))
-}
-
 preprocessing_recipe <- 
   preprocessing_recipe %>% 
   step_rm(-has_role("ID"), -all_outcomes(), -starts_with(feature_prefixes))
