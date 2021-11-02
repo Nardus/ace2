@@ -314,21 +314,25 @@ best_params <- future_map2(cv_folds$inner_resamples, cv_folds$recipes, tune_inne
 
 
 # Fit final modelling workflow on all training data from each outer fold
-fit_final <- function(outer_split, fold_recipe, hyperparams, model) {
+# - Note that unlike above, we have to use the original, untrained recipe here
+#   to create a full workflow
+# - Workflow will prepare the recipe anyway, using the same data splits as above 
+#  (and this causes issues if the recipe has been prepared before)
+fit_final <- function(outer_split, hyperparams, model, master_recipe) {
   tuned_model <- finalize_model(model, hyperparams)
   fold_training_data <- analysis(outer_split)
   
   workflow() %>% 
-    add_recipe(fold_recipe) %>% 
+    add_recipe(master_recipe) %>% 
     add_model(tuned_model) %>% 
     fit(fold_training_data)
 }
 
-final_models <- future_pmap(.l = list(outer_split = cv_folds$splits, 
-                                      fold_recipe = cv_folds$recipes,
+final_models <- future_pmap(.l = list(outer_split = cv_folds$splits,
                                       hyperparams = best_params), 
                             .f = fit_final,
                             model = xgboost_model,
+                            master_recipe = preprocessing_recipe,
                             .options = recipe_opts)
 
 # Get predictions for the holdout in each outer fold
