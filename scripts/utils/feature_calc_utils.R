@@ -61,7 +61,7 @@ get_dist_to_closest_positive <- function(pairwise_dist_data, metadata) {
 
 
 # ---- Variable sites (distance to consensus) -----------------------------------------------------
-#' Get most common amino acid found among positives (for a given binary reponse being 
+#' Get most common amino acid found among positives (for a given binary response being 
 #' predicted, e.g. susceptible hosts) at each site, then calculate distance to this 
 #' amino acid.
 #' 

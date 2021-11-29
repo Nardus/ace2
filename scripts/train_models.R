@@ -35,6 +35,9 @@ features_group$add_argument("--distance_to_positive", action = "store_const", co
 features_group$add_argument("--binding_affinity", action = "store_const", const = TRUE, default = FALSE,
                             help = "include features measuring binding affinity to the SARS-CoV-2 spike protein")
 
+features_group$add_argument("--phylogeny", action = "store_const", const = TRUE, default = FALSE,
+                            help = "include features representing the host phylogeny (phylogenetic eigenvectors)")
+
 
 data_group <- parser$add_argument_group("Dataset options")
 data_group$add_argument("--evidence_min", type = "integer", choices = 1L:4L, default = 1L,
@@ -58,7 +61,7 @@ other_opts_group$add_argument("--n_threads", type = "integer", default = 16,
 INPUT <- parser$parse_args()
 
 if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$aa_properties, INPUT$distance_to_humans, 
-         INPUT$distance_to_positive, INPUT$binding_affinity))
+         INPUT$distance_to_positive, INPUT$binding_affinity, INPUT$phylogeny))
   stop("No features selected. Run train_models.R --help for available feature sets")
 
 
@@ -88,6 +91,9 @@ if (INPUT$distance_to_positive)
 
 if (INPUT$binding_affinity)
   feature_prefixes <- c(feature_prefixes, "haddock_score")
+
+if (INPUT$phylogeny)
+  feature_prefixes <- c(feature_prefixes, "phylogeny")
 
 
 # ---- Setup --------------------------------------------------------------------------------------
@@ -169,16 +175,19 @@ dist_to_humans <- read_rds("data/calculated/features_dist_to_humans.rds")
 variable_sites <- read_rds("data/calculated/features_variable_sites.rds")
 site_properties <- read_rds("data/calculated/features_site_properties.rds")
 haddock_scores <- read_rds("data/calculated/features_haddock_scores.rds")
+phylogeny_features <- read_rds("data/calculated/features_phylogeny_eigenvectors.rds")
 
 # Combine
 final_data <- metadata %>% 
   left_join(dist_to_humans, by = "ace2_accession") %>% 
   left_join(variable_sites, by = "ace2_accession") %>% 
   left_join(site_properties, by = "ace2_accession") %>% 
-  left_join(haddock_scores, by = "species")
-
+  left_join(haddock_scores, by = "species") %>% 
+  left_join(phylogeny_features, by = "species")
 
 stopifnot(nrow(final_data) == n_distinct(metadata$species))
+
+rm("phylogeny_features") # Takes ~ 1Gb of memory
 
 # Final processing
 final_data <- final_data %>% 

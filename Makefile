@@ -107,7 +107,13 @@ data/calculated/cleaned_infection_data.rds: data/internal/infection_data.xlsx da
 # Calculate features
 data/calculated/features_pairwise_dists.rds: data/calculated/ace2_protein_alignment.fasta \
                                              data/calculated/cleaned_infection_data.rds
-	Rscript scripts/calculate_features.R
+	Rscript scripts/calculate_features_aa.R
+
+data/calculated/features_phylogeny_eigenvectors.rds: data/internal/timetree_amniota.nwk \
+													 data/internal/timetree_mammalia.nwk \
+													 data/internal/timetree_aves.nwk \
+													 data/calculated/cleaned_infection_data.rds
+	Rscript scripts/calculate_features_phylogeny.R
 
 
 # ---- Training: full model -----------------------------------------------------------------------
@@ -116,14 +122,16 @@ data/calculated/features_pairwise_dists.rds: data/calculated/ace2_protein_alignm
 
 TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 						data/calculated/features_pairwise_dists.rds \
-						data/calculated/features_haddock_scores.rds
+						data/calculated/features_haddock_scores.rds \
+						data/calculated/features_phylogeny_eigenvectors.rds
 
 ALL_FEATURE_SETS =	--aa_categorical \
 					--aa_distance \
 					--aa_properties \
 					--distance_to_humans \
 					--distance_to_positive \
-					--binding_affinity
+					--binding_affinity \
+					--phylogeny
 
 output/all_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
@@ -167,6 +175,12 @@ output/all_data/%/binding_affinity/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--binding_affinity \
 		--random_seed 11386168 \
+		--n_threads 10
+
+output/all_data/%/phylogeny/predictions.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--phylogeny \
+		--random_seed 34264755 \
 		--n_threads 10
 
 
@@ -246,51 +260,85 @@ train:	train_feature_subsets \
 
 # ---- Predict other species for which ACE2 sequences are available --------------------------------
 
-output/all_data/infection/feature_selection_2/additional_preds_infection.rds: output/all_data/infection/feature_selection_2/training_results.rds \
-																			  output/all_data/shedding/feature_selection_2/training_results.rds \
-																			  data/internal/NCBI_ACE2_orthologs.csv
+output/all_data/infection/all_features/holdout_predictions.rds: output/all_data/infection/all_features/predictions.rds \
+																data/calculated/cleaned_infection_data.rds \
+																data/internal/NCBI_ACE2_orthologs.csv \
+																$(TRAINING_REQUIREMENTS)
 	Rscript scripts/predict_holdout.R
 
 
 # ---- Plots ---------------------------------------------------------------------------------------
-output/plots/feature_selection.png: $(FEATURE_MODELS)
-	Rscript scripts/plotting/plot_feature_selection.R
+# Diagnostic plots
+output/plots/performance.png: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
+	Rscript scripts/plotting/plot_performance_diagnostics.R
 
-output/plots/performance.png: $(FEATURE_MODELS) $(L2_MODELS) $(L3_MODELS)
-	Rscript scripts/plotting/plot_performance.R
+# Data overview plots
+output/plots/raw_data_overview.pdf: data/internal/timetree_amniota.nwk \
+									data/calculated/cleaned_infection_data.rds \
+									data/calculated/cleaned_shedding_data.rds \
+									data/calculated/features_pairwise_dists.rds \
+									data/internal/NCBI_ACE2_orthologs.csv \
+									data/internal/ace2_accessions.csv
+	Rscript scripts/plotting/plot_observations_phylogeny.R
+
+output/plots/existing_predictions.pdf:	output/plots/raw_data_overview.pdf \
+										data/internal/existing_predictions.csv
+	Rscript scripts/plotting/plot_existing_predictions.R
+
+
+# Accuracy
+# - Main figure
+output/plots/accuracy.png: $(FEATURE_MODELS) $(L1_L2_MODELS)
+	Rscript scripts/plotting/plot_accuracy.R
+
+# - Data quality (evidence level)
+output/plots/accuracy_data_subsets.png: $(L1_L2_MODELS) $(L3_MODELS)
+	Rscript scripts/plotting/plot_accuracy_data_subsets.R
 
 
 # Variable importance
-output/plots/varimp_overview_%.png: output/all_data/%/all_features/feature_usage.rds \
-									output/all_data/%/all_features/feature_usage_by_iteration.rds
-	Rscript scripts/plotting/plot_varimp_overview.R $(word 2,$^) $@
+# - Cluster sites by correlation
+output/plots/intermediates/feature_clusters.rds: output/all_data/infection/all_features/predictions.rds
+	Rscript scripts/plotting/get_clustered_sites.R
+
+# - Phylogeny using selected sites
+#output/plots/intermediates/predictive_sites/reduced_alignment.fasta: output/all_data/infection/all_features/predictions.rds
+#	Rscript scripts/plotting/get_predictive_sites.R
+
+#output/plots/intermediates/predictive_sites/predictive_sites.treefile: output/plots/intermediates/predictive_sites/reduced_alignment.fasta
+#	iqtree -s $< -bb 1000 -pre $(@D)/predictive_sites
+
+# - Plot
+output/plots/varimp_overview_%.png: output/all_data/%/all_features/feature_importance.rds \
+									output/plots/intermediates/feature_clusters.rds
+	Rscript scripts/plotting/plot_varimp_overview.R $< $@
+
+# TODO: add for:
+# - output/plots/shap_interaction_infection.png (plot_varimp_infection.R)
+# - output/plots/varimp_detail_infection.png (plot_varimp_infection.R)
 
 
-output/plots/varimp_detail_infection.png: output/all_data/infection/all_features/training_results.rds \
-										  output/all_data/infection/feature_selection_2/training_results.rds
-	Rscript scripts/plotting/plot_varimp_detail.R \
-		--full_model $< \
-		--best_model echo $(word 2,$^) \
-		--output_name $@
 
+# Predictions:
+# - Get taxonomy
+output/plots/intermediates/taxonomy_table.rds: output/all_data/infection/all_features/holdout_predictions.rds
+	Rscript scripts/plotting/get_taxonomy.R
 
-output/plots/varimp_infection.png: $(FEATURE_MODELS)
-	Rscript scripts/plotting/plot_varimp_infection.R
+# - Prediction overview
+output/plots/holdout_predictions.png: output/all_data/infection/all_features/holdout_predictions.rds \
+										output/plots/intermediates/taxonomy_table.rds
+	Rscript scripts/plotting/plot_holdout_predictions.R
 
+# - Maps
+output/plots/prediction_maps.png: data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
+									data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
+									data/iucn_range_maps/MAMMALS_MARINE_AND_TERRESTRIAL.shp \
+									output/all_data/infection/all_features/holdout_predictions.rds \
+									output/plots/intermediates/taxonomy_table.rds
+	Rscript scripts/plotting/plot_holdout_maps.R
 
-output/plots/varimp_shedding.png: $(FEATURE_MODELS)
-	Rscript scripts/plotting/plot_varimp_shedding.R
-
-
-# Maps
-output/plots/maps.pdf: data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
-					   data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
-					   data/iucn_range_maps/MAMMALS_MARINE_AND_TERRESTRIAL.shp
-	$(error Not implemented) # TODO
 
 
 .PHONY: plots
-plots: output/plots/feature_selection.png \
-	   output/plots/performance.png \
-	   output/plots/varimp_infection.png \
-	   output/plots/varimp_shedding.png
+plots: output/plots/performance.png \
+	   output/plots/varimp_overview_infection.png
