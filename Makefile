@@ -117,21 +117,19 @@ data/calculated/features_phylogeny_eigenvectors.rds: data/internal/timetree_amni
 
 
 # ---- Training: full model -----------------------------------------------------------------------
-# Using all data and all features
+# Using all data and all ACE2-based features
 # Output format is "dataset/response_var/feature_set/*"
 
 TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 						data/calculated/features_pairwise_dists.rds \
-						data/calculated/features_haddock_scores.rds \
-						data/calculated/features_phylogeny_eigenvectors.rds
+						data/calculated/features_haddock_scores.rds
 
 ALL_FEATURE_SETS =	--aa_categorical \
 					--aa_distance \
 					--aa_properties \
 					--distance_to_humans \
 					--distance_to_positive \
-					--binding_affinity \
-					--phylogeny
+					--binding_affinity
 
 output/all_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
@@ -177,7 +175,9 @@ output/all_data/%/binding_affinity/predictions.rds: $(TRAINING_REQUIREMENTS)
 		--random_seed 11386168 \
 		--n_threads 10
 
-output/all_data/%/phylogeny/predictions.rds: $(TRAINING_REQUIREMENTS)
+# Try timetree phylogeny as an alternative to ACE2 sequences:
+output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+												data/calculated/features_phylogeny_eigenvectors.rds
 	Rscript scripts/train_models.R $* $(@D) \
 		--phylogeny \
 		--random_seed 34264755 \
@@ -229,6 +229,7 @@ FEATURE_FOLDERS =	$(foreach a,$(RESPONSE_VARS), \
 							$(a)/$(b) ))
 
 FEATURE_MODELS = $(patsubst %, output/all_data/%/predictions.rds, $(FEATURE_FOLDERS))
+PHYLO_MODELS = $(patsubst %, output/all_data/%/phylogeny/predictions.rds, $(RESPONSE_VARS))
 
 
 # Data subsets (includes full data):
@@ -245,7 +246,7 @@ L3_MODELS = output/l3+4_data/infection/all_features/predictions.rds
 
 # Shortcuts:
 .PHONY: train_feature_subsets train_data_subsets train
-train_feature_subsets: $(FEATURE_MODELS)
+train_feature_subsets: $(FEATURE_MODELS) $(PHYLO_MODELS)
 train_data_subsets: $(L1_L2_MODELS) $(L3_MODELS)
 
 train:	train_feature_subsets \
@@ -255,8 +256,6 @@ train:	train_feature_subsets \
 # for another step):
 .PRECIOUS: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
 
-
-# TODO: updates needed below
 
 # ---- Predict other species for which ACE2 sequences are available --------------------------------
 
@@ -282,7 +281,8 @@ output/plots/raw_data_overview.pdf: data/internal/timetree_amniota.nwk \
 	Rscript scripts/plotting/plot_observations_phylogeny.R
 
 output/plots/existing_predictions.pdf:	output/plots/raw_data_overview.pdf \
-										data/internal/existing_predictions.csv
+										data/internal/existing_predictions.csv \
+										output/all_data/infection/all_features/holdout_predictions.rds
 	Rscript scripts/plotting/plot_existing_predictions.R
 
 

@@ -187,7 +187,6 @@ final_data <- metadata %>%
 
 stopifnot(nrow(final_data) == n_distinct(metadata$species))
 
-rm("phylogeny_features") # Takes ~ 1Gb of memory
 
 # Final processing
 final_data <- final_data %>% 

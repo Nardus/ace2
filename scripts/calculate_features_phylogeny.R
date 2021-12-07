@@ -54,5 +54,8 @@ eigenvectors <- PEM.build(treegraph, a=0) # This assumes Brownian motion (i.e. n
 eigen_df <- data.frame(eigenvectors) %>%
     rownames_to_column("species") %>%
     rename_with(~str_replace(., "^V", "phylogeny"), -.data$species)
-    
+
+# Keep first 50 eigenvectors:
+eigen_df <- eigen_df[, 1:51]
+
 saveRDS(eigen_df, "data/calculated/features_phylogeny_eigenvectors.rds")
