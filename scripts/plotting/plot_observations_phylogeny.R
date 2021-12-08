@@ -13,10 +13,12 @@ suppressPackageStartupMessages({
   library(ggsignif)
   library(grid)
   library(cowplot)
+  
+  source("scripts/plotting/plotting_constants.R")
+  source("scripts/utils/feature_calc_utils.R")
+  source("scripts/utils/plot_utils.R")
+  source("scripts/utils/timetree_constants.R")
 })
-
-source("scripts/plotting/plotting_constants.R")
-source("scripts/utils/feature_calc_utils.R")
 
 
 timetree <- read.tree("data/internal/timetree_amniota.nwk")
@@ -43,15 +45,11 @@ ace2_metadata <- bind_rows(ncbi_metadata, internal_metadata) %>%
 # Correct names
 timetree$tip.label <- str_replace(timetree$tip.label, "_", " ")
 
-name_replacements <- c("Canis lupus" = "Canis familiaris",
-                       "Neophocaena phocaenoides" = "Neophocaena asiaeorientalis",
-                       "Monachus schauinslandi" = "Neomonachus schauinslandi")
-
-stopifnot(all(names(name_replacements) %in% timetree$tip.label))
+stopifnot(all(names(TIMETREE_TAXONOMY_CORRECTIONS) %in% timetree$tip.label))
 
 timetree$tip.label <- with(timetree,
-                           if_else(tip.label %in% names(name_replacements),
-                                   as.character(name_replacements[tip.label]),
+                           if_else(tip.label %in% names(TIMETREE_TAXONOMY_CORRECTIONS),
+                                   as.character(TIMETREE_TAXONOMY_CORRECTIONS[tip.label]),
                                    tip.label))
 
 stopifnot(all(infection_data$species %in% timetree$tip.label))
@@ -62,11 +60,6 @@ stopifnot(all(timetree$tip.label %in% infection_data$species))
 
 
 # ---- Plot data on phylogeny ----------------------------------------------------------------------
-evidence_labels <- c("1" = "Observed infection",
-                     "2" = "Experimental infection",
-                     "3" = "Cell culture",
-                     "4" = "Cell culture (het-ACE2)")
-
 tree_midpoint <- max(cophenetic(timetree))/4
 
 # Prepare virus points
@@ -121,7 +114,7 @@ plot_data_panel <- function(response_data, virus_data, label_var) {
            label = factor(.data$label, levels = c("True", "False")),
            evidence_level = factor(.data$evidence_level,
                                    levels = c("1", "2", "3", "4"),
-                                   labels = evidence_labels))
+                                   labels = EVIDENCE_LABELS))
   
   virus_data <- response_data %>% 
     select(.data$species, .data$label, .data$evidence_level) %>% 
@@ -149,7 +142,8 @@ infection_panel <- plot_data_panel(infection_data, virus_data_infection, "infect
   labs(x = "Infected") +
   theme(axis.text.y = element_blank(),
         axis.ticks.y = element_blank(),
-        plot.margin = margin(t = 5.5, r = 0, b = 5.5, l = 0))
+        plot.background = element_blank(),
+        plot.margin = margin(t = 5.5, r = 0, b = 5.5, l = 1))
 
 
 shedding_panel <- plot_data_panel(shedding_data, virus_data_shedding, "shedding") +
@@ -177,118 +171,6 @@ overview_plot <- plot_grid(tree_panel2, infection_panel, shedding_panel,
                            align = "h", axis = "tb")
 
 
-# ---- Plot clustering vs distance -----------------------------------------------------------------
-# Get ACE2 distances
-human_accession <- ace2_metadata$ace2_accession[ace2_metadata$species == "Homo sapiens"]
-rhinolophid_accessions <- ace2_metadata$ace2_accession[startsWith(ace2_metadata$species, "Rhinolophus")]
-
-dist_to_human_ace2 <- ace2_dists %>% 
-  filter(.data$other_seq == human_accession) %>% 
-  left_join(ace2_metadata, by = "ace2_accession") %>% 
-  select(.data$species, ace2_dist_human = .data$distance)
-
-dist_to_rhinolophid_ace2 <- ace2_dists %>% 
-  filter(.data$other_seq %in% rhinolophid_accessions) %>% 
-  group_by(.data$ace2_accession) %>% 
-  summarise(ace2_dist_rhinolophid = mean(.data$distance)) %>% 
-  left_join(ace2_metadata, by = "ace2_accession") %>% 
-  select(.data$species, .data$ace2_dist_rhinolophid)
-
-
-# Get phylogenetic distances on timetree
-# - Distances to closest positive/negative, as an indication of clustering
-phylo_dists <- cophenetic(timetree) %>% 
-  data.frame(check.names = FALSE) %>% 
-  rownames_to_column("from_species") %>% 
-  pivot_longer(-.data$from_species, names_to = "to_species", values_to = "distance")
-
-phylo_dists <- phylo_dists %>% 
-  rename(ace2_accession = .data$from_species,
-         other_seq = .data$to_species)
-
-dist_closest_positive <- infection_data %>% 
-  select(-.data$ace2_accession) %>% 
-  rename(label = .data$infected, ace2_accession = .data$species) %>% 
-  get_dist_to_closest_positive(pairwise_dist_data = phylo_dists, 
-                               metadata = .) %>% 
-  select(species = .data$ace2_accession, .data$closest_positive_overall)
-
-dist_closest_negative <- infection_data %>% 
-  select(-.data$ace2_accession) %>% 
-  rename(label = .data$infected, ace2_accession = .data$species) %>% 
-  mutate(label = if_else(.data$label == "True", "False", "True")) %>%  # Reverse label so "closest_positive" returns closest negative
-  get_dist_to_closest_positive(pairwise_dist_data = phylo_dists, 
-                               metadata = .) %>% 
-  select(species = .data$ace2_accession, 
-         closest_negative_overall = .data$closest_positive_overall)
-
-# Merge all distance/clustering measures
-all_dists <- dist_to_human_ace2 %>% 
-  full_join(dist_to_rhinolophid_ace2, by = "species") %>% 
-  left_join(dist_closest_positive, by = "species") %>% 
-  left_join(dist_closest_negative, by = "species")
-
-dist_data <- infection_data %>% 
-  left_join(all_dists, by = "species") %>% 
-  mutate(infected = factor(.data$infected, levels = c("True", "False")))
-
-
-# Plots
-plot_dists <- function(y_var, test_position, distances = dist_data, viruses = virus_data_infection) {
-  distances$adjusted_x = as.numeric(distances$infected) + offsetX(distances[[y_var]], distances$infected)
-  
-  viruses <- left_join(viruses, distances, by = "species")
-  
-  ggplot(distances, aes_string(x = "infected", y = y_var)) +
-    geom_boxplot(outlier.colour = NA) + 
-    
-    geom_point(aes(x = adjusted_x, fill = factor(evidence_level), shape = virus), 
-               colour = "grey40", size = 1, stroke = 0.3, data = viruses) +
-    
-    geom_signif(comparisons = list(c("True", "False")), 
-                test = "ks.test", test.args = list(exact = FALSE),
-                size = 0.3, tip_length = 0.014, textsize = 1.8, vjust = -0.2, 
-                y_position = test_position) +
-    
-    scale_fill_brewer(palette = "YlGnBu", direction = - 1, labels = evidence_labels) +
-    scale_shape_manual(values = VIRUS_SHAPES) +
-    theme(legend.position = "none")
-}
-
-
-# - ACE distances
-dist_h_plot <- plot_dists("ace2_dist_human", test_position = 20800) +
-  scale_y_continuous(limits = c(0, 23800), expand = expansion(add = 200)) +
-  labs(x = "Infected", y = "ACE2 amino acid\ndistance to humans", fill = "Best evidence") + 
-  theme(axis.text.x = element_blank(),
-        axis.title.x = element_blank(),
-        plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
-
-dist_r_plot <- plot_dists("ace2_dist_rhinolophid", test_position = 20800) +
-  scale_y_continuous(limits = c(0, 23800), expand = expansion(add = 200)) +
-  labs(x = "Infected", y = "Mean amino acid distance\nto Rhinolophid species", fill = "Best evidence") + 
-  theme(legend.position = "none")
-
-
-# - Phylogenetic clustering
-clust_pos_plot <- plot_dists("closest_positive_overall", test_position = 630) +
-  scale_y_continuous(limits = c(0, 700), expand = expansion(add = 20)) +
-  labs(x = "Infected", y = "Phylogenetic distance\nto closest infected\nneighbour (My)") + 
-  theme(legend.position = "none",
-        axis.text.x = element_blank(),
-        axis.title.x = element_blank(),
-        plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
-
-clust_neg_plot <- plot_dists("closest_negative_overall", test_position = 630) +
-  scale_y_continuous(limits = c(0, 700), expand = expansion(add = 20)) +
-  labs(x = "Infected", y = "Phylogenetic distance\nto closest non-infected\nneighbour (My)", 
-       fill = "Best evidence") + 
-  theme(legend.position = "none",
-        axis.text.x = element_blank(),
-        axis.title.x = element_blank(),
-        plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
-
-
 # ---- Plot Pagel's lambda -------------------------------------------------------------------------
 # Calculate clustering
 get_lambda <- function(feature_name, data, tree) {
@@ -302,7 +184,7 @@ get_lambda <- function(feature_name, data, tree) {
 }
 
 # - For infection
-dist_data_infection <- dist_data %>% 
+dist_data_infection <- infection_data %>% 
   mutate(infected_l1 = if_else(.data$evidence_level > 1, FALSE, .data$infected == "True"),
          infected_l2 = if_else(.data$evidence_level > 2, FALSE, .data$infected == "True"),
          infected_l3 = if_else(.data$evidence_level > 3, FALSE, .data$infected == "True"),
@@ -321,7 +203,6 @@ lambdas_infection <- lapply(paste0("infected_l", 1:4), get_lambda,
 stopifnot(all(shedding_data$evidence_level) %in% c(1, 2)) # Cell culture does not make sense here
 
 dist_data_shedding <- shedding_data %>% 
-  left_join(all_dists, by = "species") %>% 
   mutate(shedding_l1 = if_else(.data$evidence_level > 1, FALSE, .data$shedding == "True"),
          shedding_l2 = .data$shedding == "True") %>% 
   data.frame()
@@ -375,8 +256,111 @@ lambda_plot <- ggplot(lambdas, aes(x = max_evidence, y = lambda, group = label))
         axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 
+# ---- Find source of clustering -------------------------------------------------------------------
+# Get phylogenetic distances on timetree
+# - Distances to closest positive/negative, as an indication of clustering
+phylo_dists <- cophenetic(timetree) %>% 
+  data.frame(check.names = FALSE) %>% 
+  rownames_to_column("from_species") %>% 
+  pivot_longer(-.data$from_species, names_to = "to_species", values_to = "distance")
+
+phylo_dists <- phylo_dists %>% 
+  rename(ace2_accession = .data$from_species,
+         other_seq = .data$to_species)
+
+dist_closest_positive <- infection_data %>% 
+  select(-.data$ace2_accession) %>% 
+  rename(label = .data$infected, ace2_accession = .data$species) %>% 
+  get_dist_to_closest_positive(pairwise_dist_data = phylo_dists, 
+                               metadata = .) %>% 
+  select(species = .data$ace2_accession, 
+         closest_pos_phylo = .data$closest_positive_overall)
+
+dist_closest_negative <- infection_data %>% 
+  select(-.data$ace2_accession) %>% 
+  rename(label = .data$infected, ace2_accession = .data$species) %>% 
+  mutate(label = if_else(.data$label == "True", "False", "True")) %>%  # Reverse label so "closest_positive" returns closest negative
+  get_dist_to_closest_positive(pairwise_dist_data = phylo_dists, 
+                               metadata = .) %>% 
+  select(species = .data$ace2_accession, 
+         closest_neg_phylo = .data$closest_positive_overall)
+
+phylo_clustering_dists <- dist_closest_positive %>% 
+  full_join(dist_closest_negative, by = "species")
+
+
+# Same distances using ACE2 sequences
+dist_closest_positive <- infection_data %>% 
+  rename(label = .data$infected) %>% 
+  get_dist_to_closest_positive(pairwise_dist_data = ace2_dists, 
+                               metadata = .) %>% 
+  select(.data$ace2_accession, 
+         closest_pos_ace2 = .data$closest_positive_overall)
+
+dist_closest_negative <- infection_data %>% 
+  rename(label = .data$infected) %>% 
+  mutate(label = if_else(.data$label == "True", "False", "True")) %>% 
+  get_dist_to_closest_positive(pairwise_dist_data = ace2_dists, 
+                               metadata = .) %>% 
+  select(.data$ace2_accession, 
+         closest_neg_ace2 = .data$closest_positive_overall)
+
+ace2_clustering_dists <- dist_closest_positive %>% 
+  full_join(dist_closest_negative, by = "ace2_accession")
+
+
+# Merge all distance/clustering measures
+dist_data <- infection_data %>% 
+  left_join(phylo_clustering_dists, by = "species") %>% 
+  left_join(ace2_clustering_dists, by = "ace2_accession") %>% 
+  mutate(infected = factor(.data$infected, levels = c("True", "False")))
+
+
+# Plots
+plot_dists2 <- function(y_var, test_position, 
+                        distances = dist_data, 
+                        viruses = virus_data_infection) {
+  plot_dists(y_var, test_position, distances, viruses)
+}
+
+# - Phylogenetic clustering
+phylo_pos_plot <- plot_dists2("closest_pos_phylo", test_position = 630) +
+  scale_y_continuous(limits = c(0, 700), expand = expansion(add = 20)) +
+  labs(x = "Infected", y = "Phylogenetic distance\nto closest infected\nneighbour (My)") + 
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
+
+phylo_neg_plot <- plot_dists2("closest_neg_phylo", test_position = 630) +
+  scale_y_continuous(limits = c(0, 700), expand = expansion(add = 20)) +
+  labs(x = "Infected", y = "Phylogenetic distance\nto closest non-infected\nneighbour (My)", 
+       fill = "Best evidence") + 
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
+
+# - ACE2 clustering
+ace2_pos_plot <- plot_dists2("closest_pos_ace2", test_position = 14000) +
+  scale_y_continuous(limits = c(0, 15500), expand = expansion(add = 800)) +
+  labs(x = "Infected", y = "ACE2 distance\nto closest infected\nneighbour (My)") + 
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
+
+ace2_neg_plot <- plot_dists2("closest_neg_ace2", test_position = 14000) +
+  scale_y_continuous(limits = c(0, 15500), expand = expansion(add = 800)) +
+  labs(x = "Infected", y = "ACE2 distance\nto closest non-infected\nneighbour (My)", 
+       fill = "Best evidence") + 
+  theme(legend.position = "none",
+        plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
+
+
+
 # ---- Output --------------------------------------------------------------------------------------
-side_panels1 <- plot_grid(clust_pos_plot, clust_neg_plot, dist_h_plot, dist_r_plot, 
+side_panels1 <- plot_grid(phylo_pos_plot, phylo_neg_plot, ace2_pos_plot, ace2_neg_plot,
                           ncol = 1, rel_heights = c(1, 1, 1, 1.2),
                           align = "v", axis = "lr",
                           labels = c("C", "D", "E", "F"), label_size = 9, hjust = 0)
@@ -408,10 +392,18 @@ stopifnot(all(bird_spp %in% dist_data$species))
 dists_no_birds <- dist_data %>% 
   filter(!.data$species %in% bird_spp)
 
-ks_no_birds <- with(dists_no_birds, 
-                    ks.test(closest_negative_overall[infected == "True"], 
-                            closest_negative_overall[infected == "False"],
-                            exact = FALSE))
+phylo_no_birds <- with(dists_no_birds, 
+                       wilcox.test(closest_neg_phylo[infected == "True"], 
+                                   closest_neg_phylo[infected == "False"],
+                                   exact = FALSE))
+
+ace2_no_birds <- with(dists_no_birds, 
+                      wilcox.test(closest_neg_ace2[infected == "True"], 
+                                  closest_neg_ace2[infected == "False"],
+                                  exact = FALSE))
 
 cat("\n\nAfter excluding birds, negative cases are still significantly closer to other",
-    "negative cases: D =",  ks_no_birds$statistic, "; p-value =", ks_no_birds$p.value)
+    "negative cases: \n",
+    "\tPhylogenetic distance: p-value =", phylo_no_birds$p.value, "\n",
+    "\tACE2 distance: p-value =", ace2_no_birds$p.value,
+    "\n\n")

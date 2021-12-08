@@ -17,6 +17,9 @@ as_human_coord <- function(alignment_coord, human = human_seq) {
   if (is.na(alignment_coord))
     return(NA_integer_)
   
+  if (human[alignment_coord] == "-")
+    return(NA_integer_) # position does not exist in human sequence
+  
   gaps <- human == "-"
   offset_by <- sum(gaps[1:alignment_coord])
   
@@ -35,15 +38,42 @@ add_readable_feature_names <- function(x) {
   x %>% 
     mutate(feature_type = case_when(startsWith(.data$feature, "dist_") ~ "Consensus distance",
                                     startsWith(.data$feature, "variable_site") ~ "Amino acid identity",
+                                    startsWith(.data$feature, "property_polarity") ~ "Polarity",
+                                    startsWith(.data$feature, "property_hydrophobicity") ~ "Hydrophobicity",
+                                    startsWith(.data$feature, "property_volume") ~ "Volume",
                                     .data$feature == "haddock_score" ~ "HADDOCK binding score",
                                     TRUE ~ "Other"),
-           feature_position = if_else(.data$feature_type %in% c("Consensus distance", "Amino acid identity"),
+           feature_position = if_else(.data$feature_type %in% c("Consensus distance", "Amino acid identity",
+                                                                "Polarity", "Hydrophobicity", "Volume"),
                                       str_extract(.data$feature, "[[:digit:]]+$"), 
                                       NA_character_),
-           feature_position_corrected = as_human_coord_v(as.integer(.data$feature_position)),
+           feature_position = as.integer(.data$feature_position),
+           feature_position_corrected = as_human_coord_v(.data$feature_position),
            feature_label = case_when(.data$feature_type == "Other" ~ .data$feature,
                                      .data$feature == "haddock_score" ~ .data$feature_type, 
                                      TRUE ~ sprintf("%s (%d)", .data$feature_type, .data$feature_position_corrected)))
+}
+
+
+# ---- Jittering -----------------------------------------------------------------------------------
+# Adjust jitter to some percentage of the size of the smallest gap in x
+# Based on the default calculation in jitter(), but allows changing jitter_percent
+get_jitter_amount <- function(x, jitter_percent = 0.20) {
+  z <- diff(r <- range(x[is.finite(x)]))
+  
+  if (z == 0) 
+    z <- abs(r[1L])
+  if (z == 0) 
+    z <- 1
+  
+  d <- diff(xx <- unique(sort.int(round(x, 3 - floor(log10(z))))))
+  d <- if (length(d)) 
+    min(d)
+  else if (xx != 0) 
+    xx/10
+  else z/10
+  
+  jitter_percent * abs(d)
 }
 
 
@@ -116,8 +146,59 @@ get_shap_values <- function(training_result, iteration = 1, interaction = FALSE)
 }
 
 
+# ---- Plot annotations -------------------------------------------------------------------------
+# Return spearman correlation and R-squared in a format suitable for geom_text annotation
+trendline_annotation <- function(x, y, x_name, y_name, data, ...) {
+  data$x <- data[[x_name]]
+  data$y <- data[[y_name]]
+  
+  spearman_cor <- cor(data$x, data$y, method = "spearman")
+  fit <- lm(y ~ x, data = data)
+  fit_summary <- summary(fit)
+  
+  p_val <- fit_summary$coefficients[2, "Pr(>|t|)"]
+  p_val <- if_else(p_val < 0.001, "<0.001", sprintf("==%3.3f", p_val))
+  
+  df <- data.frame(label = c(sprintf("textstyle(Spearman)~rho==%3.3f", spearman_cor),
+                             sprintf("list(R^2==%3.3f, p%s)", fit_summary$r.squared, p_val))) 
+  
+  geom_text(aes(label = label), x = x, y = y, parse = TRUE, data = df, ...)
+}
+
 
 # ---- Specific plot types -------------------------------------------------------------------------
+# Plot a distance measure, to illustrate separation of classes
+plot_dists <- function(y_var, test_position, distances, viruses) {
+  evidence_labels = c("1" = "Observed infection",
+                      "2" = "Experimental infection",
+                      "3" = "Cell culture",
+                      "4" = "Cell culture (het-ACE2)")
+  
+  # Jitter to approximate local density
+  distances$adjusted_x = as.numeric(distances$infected) + offsetX(distances[[y_var]], distances$infected)
+  
+  # Virus symbols
+  #  - This duplicates points, but with the same jitter position 
+  #    (so we can plot all viruses at a given species prediction)
+  viruses <- left_join(viruses, distances, by = "species")  
+  
+  # Plots
+  ggplot(distances, aes_string(x = "infected", y = y_var)) + # Boxplots/p-value using raw data (before duplication)
+    geom_boxplot(outlier.colour = NA) + 
+    
+    geom_point(aes(x = adjusted_x, fill = factor(evidence_level), shape = virus), 
+               colour = "grey40", size = 1, stroke = 0.3, data = viruses) +  # Use repeated, overlapping symbols
+    
+    geom_signif(comparisons = list(c("True", "False")), 
+                test = "wilcox.test", test.args = list(exact = FALSE),
+                size = 0.3, tip_length = 0.014, textsize = 1.8, vjust = -0.2, 
+                y_position = test_position) +
+    
+    scale_fill_brewer(palette = "YlGnBu", direction = - 1, labels = evidence_labels) +
+    scale_shape_manual(values = VIRUS_SHAPES) +
+    theme(legend.position = "none")
+}
+
 
 # Raw SHAP values vs input feature value
 plot_shap <- function(shapvals, feature_name, x_is_factor = FALSE, jitter_width = 0.1, jitter_height = 0.05) {
