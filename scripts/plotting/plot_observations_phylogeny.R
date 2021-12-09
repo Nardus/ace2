@@ -384,6 +384,12 @@ saveRDS(virus_data_infection, "output/plots/intermediates/virus_data_infection.r
 
 
 # ---- Values mentioned in text --------------------------------------------------------------------
+cat("\n")
+cat("Pagel's lambda:\n")
+print(lambdas)
+cat("\n")
+
+# Check effect of bird outliers:
 bird_spp <- c("Anser anser", "Anser cygnoides", "Anas platyrhynchos", "Gallus gallus", 
               "Meleagris gallopavo", "Coturnix japonica")
 

@@ -8,7 +8,8 @@ TIMETREE_TAXONOMY_CORRECTIONS <- c("Cebus capucinus" = "Cebus imitator",
                                    "Caprimulgus carolinensis" = "Antrostomus carolinensis",
                                    "Picoides pubescens" = "Dryobates pubescens",
                                    "Corvus corone" = "Corvus cornix",
-                                   "Canis lupus" = "Canis familiaris")
+                                   "Canis lupus" = "Canis familiaris",
+                                   "Tupaia belangeri" = "Tupaia chinensis")
 
 TIMETREE_KNOWN_MISSING <- c("Tinamus guttatus", 
                             "Chiroxiphia lanceolata",

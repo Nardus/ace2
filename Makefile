@@ -272,6 +272,12 @@ output/plots/performance.png: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
 	Rscript scripts/plotting/plot_performance_diagnostics.R
 
 # Data overview plots
+.PHONY: report_data_overview
+report_data_overview:	data/internal/infection_data.xlsx \
+						data/calculated/cleaned_infection_data.rds \
+						data/calculated/cleaned_shedding_data.rds
+	Rscript scripts/plotting/report_data_overview_stats.R
+
 output/plots/raw_data_overview.pdf: data/internal/timetree_amniota.nwk \
 									data/calculated/cleaned_infection_data.rds \
 									data/calculated/cleaned_shedding_data.rds \
@@ -286,13 +292,20 @@ output/plots/existing_predictions.pdf:	output/plots/raw_data_overview.pdf \
 	Rscript scripts/plotting/plot_existing_predictions.R
 
 
+output/plots/phylogeny_congruence.pdf: data/internal/timetree_amniota.nwk \
+												data/internal/ace2_accessions.csv \
+												data/internal/NCBI_ACE2_orthologs.csv \
+												data/calculated/features_pairwise_dists.rds
+	Rscript scripts/plotting/plot_phylogeny_congruence.R
+
+
 # Accuracy
 # - Main figure
-output/plots/accuracy.png: $(FEATURE_MODELS) $(L1_L2_MODELS)
+output/plots/accuracy.pdf: $(FEATURE_MODELS) $(L1_L2_MODELS)
 	Rscript scripts/plotting/plot_accuracy.R
 
 # - Data quality (evidence level)
-output/plots/accuracy_data_subsets.png: $(L1_L2_MODELS) $(L3_MODELS)
+output/plots/accuracy_data_subsets.pdf: $(L1_L2_MODELS) $(L3_MODELS)
 	Rscript scripts/plotting/plot_accuracy_data_subsets.R
 
 
@@ -300,13 +313,6 @@ output/plots/accuracy_data_subsets.png: $(L1_L2_MODELS) $(L3_MODELS)
 # - Cluster sites by correlation
 output/plots/intermediates/feature_clusters.rds: output/all_data/infection/all_features/predictions.rds
 	Rscript scripts/plotting/get_clustered_sites.R
-
-# - Phylogeny using selected sites
-#output/plots/intermediates/predictive_sites/reduced_alignment.fasta: output/all_data/infection/all_features/predictions.rds
-#	Rscript scripts/plotting/get_predictive_sites.R
-
-#output/plots/intermediates/predictive_sites/predictive_sites.treefile: output/plots/intermediates/predictive_sites/reduced_alignment.fasta
-#	iqtree -s $< -bb 1000 -pre $(@D)/predictive_sites
 
 # - Plot
 output/plots/varimp_overview_%.png: output/all_data/%/all_features/feature_importance.rds \
@@ -340,5 +346,6 @@ output/plots/prediction_maps.png: data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.
 
 
 .PHONY: plots
-plots: output/plots/performance.png \
-	   output/plots/varimp_overview_infection.png
+plots: 	report_data_overview \
+		output/plots/performance.png \
+		output/plots/varimp_overview_infection.png

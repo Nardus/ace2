@@ -23,6 +23,7 @@ load_all_runs <- function(data_sub_set) {
   for (resp in response_vars) {
     response_path <- file.path(top_dir, resp)
     run_ids <- list.dirs(response_path, full.names = FALSE, recursive = FALSE)
+    run_ids <- run_ids[!startsWith(run_ids, "_")]
     
     new_data <- lapply(run_ids, load_single_run, 
                        dataset = data_sub_set,
