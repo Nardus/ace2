@@ -16,8 +16,11 @@ existing_predictions <- read_csv("data/internal/existing_predictions.csv",
                                                   reverse_score = "l",
                                                   .default = "c"))
 
+taxonomy <- readRDS("data/calculated/taxonomy.rds")
+
 ace2_cv_preds <- readRDS("output/all_data/infection/all_features/predictions.rds")
 phylo_cv_preds <- readRDS("output/all_data/infection/phylogeny/predictions.rds")
+ensemble_cv_preds <- readRDS("output/all_data/infection/ensemble/predictions.rds")
 
 ace2_holdout_preds <- readRDS("output/all_data/infection/all_features/holdout_predictions.rds") %>% 
   filter(.data$prediction_type != "Fitted value")
@@ -25,13 +28,38 @@ ace2_holdout_preds <- readRDS("output/all_data/infection/all_features/holdout_pr
 phylo_holdout_preds <- readRDS("output/all_data/infection/phylogeny/holdout_predictions.rds") %>% 
   filter(.data$prediction_type != "Fitted value")
 
+ensemble_holdout_preds <- readRDS("output/all_data/infection/ensemble/holdout_predictions.rds") %>% 
+  filter(.data$prediction_type != "Fitted value")
+
 
 # ---- Fix taxonomy --------------------------------------------------------------------------------
+stopifnot(all(existing_predictions$species %in% taxonomy$internal_name))
+
+taxonomy <- taxonomy %>% 
+  select(.data$internal_name, .data$species)
+
 existing_predictions <- existing_predictions %>%
-  mutate(species = case_when(.data$species == "Canis lupus familiaris" ~ "Canis familiaris",
-                             TRUE ~ .data$species),
-         species = if_else(.data$species == "Bos indicus x Bos taurus", .data$species,
-                           str_extract(.data$species, "^[[:alpha:]]+ [[:alpha:]]+")))  # Remove subspecies info
+  rename(internal_name = .data$species) %>% 
+  left_join(taxonomy, by = "internal_name")
+
+
+# Summarise over all subspecies in the same study
+# - For categorical predictions, the most common value (generally the same across subspecies anyway)
+# - For numeric scores, the mean 
+categorical_preds <- existing_predictions %>% 
+  group_by(.data$citation_key, .data$species, .data$prediction) %>% 
+  summarise(n = n(), .groups = "drop_last") %>% 
+  filter(.data$n == max(.data$n)) %>% 
+  sample_n(size = 1) %>%  # in case of ties
+  ungroup() %>% 
+  select(-.data$n)
+  
+existing_predictions <- existing_predictions %>% 
+  group_by(.data$citation_key, .data$prediction_type, .data$predictor, .data$reverse_score,
+           .data$species) %>% 
+  summarise(raw_score = mean(.data$raw_score),  
+            .groups = "drop") %>% 
+  left_join(categorical_preds, by = c("citation_key", "species"))
 
 
 # ---- Add our values ------------------------------------------------------------------------------
@@ -44,6 +72,11 @@ phylo_cv_preds <- phylo_cv_preds %>%
   select(.data$species, .data$prediction,
          raw_score = .data$p_true)
 
+ensemble_cv_preds <- ensemble_cv_preds %>% 
+  select(.data$species, .data$prediction,
+         raw_score = .data$p_true)
+
+
 ace2_holdout_preds <- ace2_holdout_preds %>% 
   select(.data$species, 
          prediction = .data$predicted_label,
@@ -53,6 +86,12 @@ phylo_holdout_preds <- phylo_holdout_preds %>%
   select(.data$species, 
          prediction = .data$predicted_label,
          raw_score = .data$probability)
+
+ensemble_holdout_preds <- ensemble_holdout_preds %>% 
+  select(.data$species, 
+         prediction = .data$predicted_label,
+         raw_score = .data$probability)
+
 
 # Merge
 ace2_predictions <- ace2_cv_preds %>% 
@@ -67,8 +106,15 @@ phylo_predictions <- phylo_cv_preds %>%
          predictor = "host phylogeny",
          prediction_type = "phylogeny")
 
+ensemble_predictions <- ensemble_cv_preds %>% 
+  bind_rows(ensemble_holdout_preds) %>% 
+  mutate(citation_key = "This study (ensemble)",
+         predictor = "ensemble",
+         prediction_type = "ensemble")
+
 internal_predictions <- ace2_predictions %>% 
   bind_rows(phylo_predictions) %>% 
+  bind_rows(ensemble_predictions) %>% 
   mutate(reverse_score = FALSE)
 
 all_predictions <- existing_predictions %>% 

@@ -85,11 +85,21 @@ phylo_predictions <- expanded_phylo_data %>%
   
 phylo_predictions$probability <- predict(phylo_workflow, expanded_phylo_data, type = "raw")
 
+# Ensemble
+ensemble_predictions <- ace2_predictions %>% 
+  select(.data$species, ace_prob = .data$probability) %>% 
+  left_join(phylo_predictions, by = "species") %>% 
+  rename(phylo_prob = .data$probability) %>% 
+  group_by(.data$species) %>% 
+  mutate(probability = mean(c(.data$ace_prob, .data$phylo_prob))) %>% 
+  ungroup()
+
 
 # ---- Find best cutoff ----------------------------------------------------------------------------
 # Use training data to find optimal cut-off for novel species
 ace2_cutoff <- find_best_cuttof(ace2_predictions)
 phylo_cutoff <- find_best_cuttof(phylo_predictions)
+ensemble_cutoff <- find_best_cuttof(ensemble_predictions)
 
 
 # ---- Discrete predictions ------------------------------------------------------------------------
@@ -110,7 +120,13 @@ phylo_predictions <- phylo_predictions %>%
   select(.data$species, .data$label, 
          .data$prediction_type, .data$predicted_label, .data$probability, .data$cutoff)
 
+ensemble_predictions <- ensemble_predictions %>% 
+  add_discrete_predictions(ensemble_cutoff) %>% 
+  select(.data$species, .data$label, 
+         .data$prediction_type, .data$predicted_label, .data$probability, .data$cutoff)
+
 
 # ---- Output ---------------------------------------------------------------------------
 saveRDS(ace2_predictions, "output/all_data/infection/all_features/holdout_predictions.rds")
 saveRDS(phylo_predictions, "output/all_data/infection/phylogeny/holdout_predictions.rds")
+saveRDS(ensemble_predictions, "output/all_data/infection/ensemble/holdout_predictions.rds")

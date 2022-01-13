@@ -47,7 +47,13 @@ final_taxonomy <- taxonomy_table %>%
   select(-.data$id) %>% 
   pivot_wider(id_cols = "query", names_from = "rank", values_from = "name") %>% 
   rename(internal_name = .data$query) %>% 
-  mutate(species = if_else(is.na(.data$species), .data$internal_name, .data$species)) # Ensure at least the species column is available for all records
+  mutate(species = if_else(is.na(.data$species), .data$internal_name, .data$species))
+
+# Ensure at least the species column is available for all records
+missing_spp <- data.frame(internal_name = missing_spp,
+                          species = missing_spp)
+
+final_taxonomy <- bind_rows(final_taxonomy, missing_spp)
 
 # Fix known issues / synonyms:
 # - Changes required to match timetree.org phylogeny and/or IUCN range maps

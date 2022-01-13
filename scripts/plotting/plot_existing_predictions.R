@@ -167,18 +167,20 @@ overview_plot <- plot_grid(NULL, dendro_panel,
 
 # ---- Binary predictions --------------------------------------------------------------------------
 # Not all studies give binary predictions - we can't assign a cutoff after the fact
-# For Damas et al., consider "Very high" to "medium" as a positive prediction
+# - For Damas et al., consider "Very high" to "medium" as a positive prediction
 binary_preds <- all_predictions %>% 
   filter(!is.na(.data$prediction)) %>% 
+  filter(.data$citation_key != "kumar2021") %>% 
   mutate(observed = .data$infected == "True",
          binary_pred = case_when(startsWith(as.character(.data$citation_key), "This study") ~ .data$prediction == "True",
                                  .data$citation_key == "damas2020" ~ .data$prediction %in% c("Very High", "High", "Medium"),
+                                 .data$citation_key == "melin2020" ~ .data$prediction == "High",
                                  TRUE ~ .data$prediction == "TRUE"))
 
 # Check that all cases were caught:
 needs_correction <- binary_preds %>% 
   mutate(citation_key = as.character(.data$citation_key),
-         nn = startsWith(.data$citation_key, "This study") | .data$citation_key == "damas2020") %>% 
+         nn = startsWith(.data$citation_key, "This study") | .data$citation_key %in% c("damas2020", "melin2020")) %>% 
   pull(.data$nn)
 
 stopifnot(all(binary_preds$prediction[!needs_correction] %in% c("TRUE", "FALSE")))
@@ -352,5 +354,24 @@ phylo_spp <- all_predictions$species[all_predictions$citation_key == "This study
 huang_spp <- all_predictions$species[all_predictions$citation_key == "huang2020"]
 alexander_spp <- all_predictions$species[all_predictions$citation_key == "alexander2020"]
 
-cat("\nACE2-based model shares", sum(ace2_spp %in% huang_spp), "with Huang et al. 2020\n")
-cat("Phylogeny-based model shares", sum(ace2_spp %in% alexander_spp), "with Alexander et al. 2020\n")
+cat("\nACE2-based model shares", sum(ace2_spp %in% huang_spp), "species with Huang et al. 2020\n")
+cat("Phylogeny-based model shares", sum(ace2_spp %in% alexander_spp), "species with Alexander et al. 2020\n")
+
+
+# - Accuracy of directly compared to Huang et al.
+huang_accuracies <- binary_preds %>% 
+  filter(.data$species %in% huang_spp) %>% 
+  filter(.data$citation_key == "huang2020" | 
+           startsWith(as.character(.data$citation_key), "This study")) %>% 
+  group_by(.data$citation_key, .data$infected) %>% 
+  summarise(n_accurate = sum(.data$observed == .data$binary_pred),
+            n_total = n(),
+            .groups = "keep") %>% 
+  mutate(accuracy = .data$n_accurate/.data$n_total,
+         lower = binom.test(.data$n_accurate, .data$n_total)$conf.int[1],
+         upper = binom.test(.data$n_accurate, .data$n_total)$conf.int[2]) %>% 
+  ungroup()
+
+cat("\n\nAccuracy when predicting the exact species used to determine performance of", 
+    "the Huang et al. model:\n")
+print(huang_accuracies)

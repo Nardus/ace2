@@ -96,7 +96,7 @@ train_ensemble <- function(models, all_data = final_data, base_preds = base_pred
     mutate(ace2_pred = predict(ace2_model, new_data = training_data, type = "raw"),
            phylo_pred = predict(phylo_model, new_data = training_data, type = "raw")) %>% 
     group_by(.data$species, .data$label) %>% 
-    summarise(probability = mean(.data$ace2_pred, .data$phylo_pred), 
+    summarise(probability = mean(c(.data$ace2_pred, .data$phylo_pred)), 
               .groups = "drop")
   
   cutoff <- find_best_cuttof(combined_predictions)
@@ -104,7 +104,7 @@ train_ensemble <- function(models, all_data = final_data, base_preds = base_pred
   # Return test prediction
   base_preds %>% 
     filter(.data$species == test_species) %>% 
-    mutate(probability = mean(.data$ace2_pred, .data$phylo_pred),
+    mutate(probability = mean(c(.data$ace2_pred, .data$phylo_pred)),
            cutoff = cutoff,
            prediction = if_else(.data$probability > cutoff, "True", "False"))
 }
