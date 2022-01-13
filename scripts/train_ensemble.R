@@ -32,7 +32,7 @@ pairwise_dist_data <- read_rds("data/calculated/features_pairwise_dists.rds")
 dist_to_humans <- read_rds("data/calculated/features_dist_to_humans.rds")
 variable_sites <- read_rds("data/calculated/features_variable_sites.rds")
 site_properties <- read_rds("data/calculated/features_site_properties.rds")
-haddock_scores <- read_rds("data/calculated/features_haddock_scores.rds")
+binding_affinity <- read_rds("data/calculated/features_binding_affinity.rds")
 phylogeny_features <- read_rds("data/calculated/features_phylogeny_eigenvectors.rds")
 
 # Combine
@@ -40,7 +40,7 @@ final_data <- metadata %>%
   left_join(dist_to_humans, by = "ace2_accession") %>% 
   left_join(variable_sites, by = "ace2_accession") %>% 
   left_join(site_properties, by = "ace2_accession") %>% 
-  left_join(haddock_scores, by = "species") %>% 
+  left_join(binding_affinity, by = "species") %>% 
   left_join(phylogeny_features, by = "species")
 
 stopifnot(nrow(final_data) == n_distinct(metadata$species))

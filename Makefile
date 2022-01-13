@@ -44,10 +44,23 @@ data/external/haddock_scores/: data/external/binding_affinity.tar.gz
 	mkdir -p $@
 	tar -xzv -C $@ -f $< "ace2-orthologs-dataset/refined_models/runs/*/ranks.models"
 
-data/calculated/features_haddock_scores.rds: data/external/haddock_scores/ \
-											 data/internal/ace2_accessions.xlsx
+data/calculated/all_haddock_scores.rds: data/external/haddock_scores/
 	mkdir -p data/calculated
 	Rscript scripts/extract_haddock_scores.R
+
+# Add Huang et al. scores and match taxonomy:
+# - Retrieve taxonomy
+data/calculated/taxonomy.rds: data/internal/NCBI_ACE2_orthologs.csv \
+							  data/internal/ace2_accessions.csv
+	mkdir -p data/calculated
+	Rscript scripts/build_taxonomy_table.R
+
+# - Get final scores
+data/calculated/features_binding_affinity.rds:	data/internal/ace2_accessions.xlsx \
+												data/internal/existing_predictions.csv \
+												data/calculated/taxonomy.rds \
+												data/calculated/all_haddock_scores.rds
+	Rscript scripts/process_binding_affinities.R
 
 
 # ---- Shapefiles for map figures ------------------------------------------------------------------
@@ -85,19 +98,12 @@ data/calculated/ace2_protein_alignment.fasta: data/external/ace2_protein_sequenc
 	mafft-einsi --thread 16 $< > $@
 
 # Phylogeny
-data/calculated/gene_tree/ace2_genetree.treefile: data/calculated/ace2_protein_alignment.fasta
+data/calculated/gene_tree/ace_genetree.treefile: data/calculated/ace2_protein_alignment.fasta
 	mkdir -p data/calculated/gene_tree
-	iqtree -nt 16 -s $< -bb 1000 -pre $(@D)/ace_genetree
+	iqtree -nt 16 -s $< -bb 1000 -pre $(@D)/ace2_genetree
 
 
 # ---- Pre-processing ------------------------------------------------------------------------------
-# Retrieve taxonomy
-data/calculated/taxonomy.rds: data/internal/NCBI_ACE2_orthologs.csv \
-							  data/internal/ace2_accessions.csv
-	mkdir -p data/calculated
-	Rscript scripts/build_taxonomy_table.R
-
-
 # Clean metadata
 data/calculated/cleaned_infection_data.rds: data/internal/infection_data.xlsx data/internal/ace2_accessions.xlsx
 	mkdir -p data/calculated
@@ -122,7 +128,7 @@ data/calculated/features_phylogeny_eigenvectors.rds: data/internal/timetree_amni
 
 TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 						data/calculated/features_pairwise_dists.rds \
-						data/calculated/features_haddock_scores.rds
+						data/calculated/features_binding_affinity.rds
 
 ALL_FEATURE_SETS =	--aa_categorical \
 					--aa_distance \
@@ -172,8 +178,7 @@ output/all_data/%/distance_to_positive/predictions.rds: $(TRAINING_REQUIREMENTS)
 output/all_data/%/binding_affinity/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--binding_affinity \
-		--random_seed 11386168 \
-		--n_threads 10
+		--random_seed 11386168
 
 # Try timetree phylogeny as an alternative to ACE2 sequences:
 output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
@@ -221,7 +226,7 @@ output/l1+2_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 
 # ---- Enemurate training combinations ------------------------------------------------------------
 # Feature subsets
-RESPONSE_VARS = infection shedding
+RESPONSE_VARS = infection
 FEATURE_SET_NAMES = $(subst --, , $(ALL_FEATURE_SETS))  # Remove leading "--"
 
 FEATURE_FOLDERS =	$(foreach a,$(RESPONSE_VARS), \
