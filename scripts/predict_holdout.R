@@ -1,39 +1,30 @@
 ## Predict additional species using trained models
 
 suppressPackageStartupMessages({
-  library(tibble)
   library(dplyr)
   library(tidyr)
   library(readr)
-  library(stringr)
-  library(xgboost)
-  library(caret)
-  library(parallel)
-  library(doParallel)
+  library(workflows)
+  library(yardstick)
   
   source("scripts/utils/aa_distance_utils.R")
   source("scripts/utils/feature_calc_utils.R")
+  source("scripts/utils/feature_recipe_utils.R")
+  source("scripts/utils/cutoff_utils.R")
 })
 
 set.seed(2312532)
-registerDoParallel(cores = 16)
-
-# ---- Models --------------------------------------------------------------------------------------
-infection_model_path <- "output/all_data/infection/feature_selection_2/"
-shedding_model_path <- "output/all_data/shedding/feature_selection_2/"
-
-model_infection <- readRDS(file.path(infection_model_path, "training_results.rds"))
-model_shedding <- readRDS(file.path(shedding_model_path, "training_results.rds"))
 
 
-# ---- Data ----------------------------------------------------------------------------------------
-# Species with known responses
-infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
-shedding_data <- read_rds("data/calculated/cleaned_shedding_data.rds")
+# ---- Model ---------------------------------------------------------------------------------------
+ace2_workflow <- read_rds("output/all_data/infection/all_features/trained_model_workflow.rds")
+phylo_workflow <- read_rds("output/all_data/infection/phylogeny/trained_model_workflow.rds")
 
-training_metadata <- infection_data %>% 
-  full_join(shedding_data, by = c("species", "ace2_accession")) %>% 
-  select(.data$species, .data$ace2_accession, .data$infected, .data$shedding)
+
+# ---- Metadata ------------------------------------------------------------------------------------
+# Used for training
+training_metadata <- read_rds("data/calculated/cleaned_infection_data.rds") %>% 
+  rename(label = .data$infected)
 
 # Other species
 # - Removing both matched species names AND accessions already used to represent related species
@@ -45,57 +36,81 @@ additional_metadata <- read_csv("data/internal/NCBI_ACE2_orthologs.csv",
            !.data$ace2_accession %in% training_metadata$ace2_accession)
 
 final_metadata <- training_metadata %>% 
-  bind_rows(additional_metadata)
+  bind_rows(additional_metadata) %>% 
+  mutate(label = factor(.data$label, levels = c("True", "False")))
 
 
-# ---- Features ------------------------------------------------------------------------------------
-# General features
+# ---- Feature data --------------------------------------------------------------------------------
 pairwise_dist_data <- read_rds("data/calculated/features_pairwise_dists.rds")
 dist_to_humans <- read_rds("data/calculated/features_dist_to_humans.rds")
 variable_sites <- read_rds("data/calculated/features_variable_sites.rds")
+site_properties <- read_rds("data/calculated/features_site_properties.rds")
 haddock_scores <- read_rds("data/calculated/features_haddock_scores.rds")
+phylogeny_features <- read_rds("data/calculated/features_phylogeny_eigenvectors.rds")
+
+# Combine 
+final_data <- final_metadata %>% 
+  left_join(dist_to_humans, by = "ace2_accession") %>% 
+  left_join(variable_sites, by = "ace2_accession") %>% 
+  left_join(site_properties, by = "ace2_accession") %>% 
+  left_join(haddock_scores, by = "species") %>% 
+  left_join(phylogeny_features, by = "species")
+
+stopifnot(nrow(final_data) == n_distinct(final_metadata$species))
+
+# Expanded dataset for phylogeny model
+# - Here we can generate predictions for all species, not just those with ACE2 sequences available
+expanded_phylo_data <- final_metadata %>% 
+  left_join(dist_to_humans, by = "ace2_accession") %>% 
+  left_join(variable_sites, by = "ace2_accession") %>% 
+  left_join(site_properties, by = "ace2_accession") %>% 
+  left_join(haddock_scores, by = "species") %>% 
+  full_join(phylogeny_features, by = "species")  # Different from "final_data" above
+  
+# Final processing
+final_data <- final_data %>% 
+  mutate_if(is.character, as.factor)
+
+expanded_phylo_data <- expanded_phylo_data %>% 
+  mutate_if(is.character, as.factor)
 
 
-# ---- Predict infection ---------------------------------------------------------------------------
-predict_additional <- function(model, label, all_data) {
-  training_data <- model$trainingData
+# ---- Continuous predictions ----------------------------------------------------------------------
+ace2_predictions <- final_metadata
+ace2_predictions$probability <- predict(ace2_workflow, final_data, type = "raw")
+
+phylo_predictions <- expanded_phylo_data %>% 
+  select(.data$species) %>% 
+  full_join(final_metadata, by = "species")
   
-  label_unknown <- is.na(all_data[[label]])
-  
-  new_data <- all_data[label_unknown, ] %>% 
-    select(.data$species, .data$ace2_accession)
-  
-  # Training set-specific features
-  stopifnot(all(new_data$ace2_accession %in% pairwise_dist_data$ace2_accession))
-  stopifnot(all(new_data$ace2_accession %in% variable_sites$ace2_accession))
-  
-  closest_positive <- get_dist_to_closest_positive(pairwise_dist_data, training_data)
-  consensus_dists <- get_consensus_dist(variable_sites, variable_sites, training_data)
-  
-  # Combine
-  new_features <- new_data %>% 
-    left_join(dist_to_humans, by = "ace2_accession") %>% 
-    left_join(variable_sites, by = "ace2_accession") %>% 
-    left_join(haddock_scores, by = "species") %>% 
-    left_join(closest_positive, by = "ace2_accession") %>% 
-    left_join(consensus_dists, by = "ace2_accession")
-  
-  # Predict
-  new_data$predicted_prob <- predict(model$finalModel, newdata = new_features, type = "raw")
-  
-  new_data %>% 
-    mutate(predicted_label = if_else(.data$predicted_prob > cutoff, "True", "False"))
+phylo_predictions$probability <- predict(phylo_workflow, expanded_phylo_data, type = "raw")
+
+
+# ---- Find best cutoff ----------------------------------------------------------------------------
+# Use training data to find optimal cut-off for novel species
+ace2_cutoff <- find_best_cuttof(ace2_predictions)
+phylo_cutoff <- find_best_cuttof(phylo_predictions)
+
+
+# ---- Discrete predictions ------------------------------------------------------------------------
+add_discrete_predictions <- function(predictions, best_cutoff) {
+  predictions %>% 
+    mutate(prediction_type = if_else(!is.na(.data$label), "Fitted value", "Prediction"),
+           predicted_label = if_else(.data$probability > best_cutoff, "True", "False"),
+           cutoff = best_cutoff)
 }
 
+ace2_predictions <- ace2_predictions %>% 
+  add_discrete_predictions(ace2_cutoff) %>% 
+  select(.data$species, .data$ace2_accession, .data$label, 
+         .data$prediction_type, .data$predicted_label, .data$probability, .data$cutoff)
 
-preds_infection <- predict_additional(model_infection,
-                                      label = "infected",
-                                      all_data = final_metadata)
+phylo_predictions <- phylo_predictions %>% 
+  add_discrete_predictions(phylo_cutoff) %>% 
+  select(.data$species, .data$label, 
+         .data$prediction_type, .data$predicted_label, .data$probability, .data$cutoff)
 
-preds_shedding <- predict_additional(model_shedding,
-                                     label = "shedding",
-                                     all_data = final_metadata)
 
 # ---- Output ---------------------------------------------------------------------------
-saveRDS(preds_infection, file.path(infection_model_path, "additional_preds_infection.rds"))
-saveRDS(preds_shedding, file.path(shedding_model_path, "additional_preds_shedding.rds"))
+saveRDS(ace2_predictions, "output/all_data/infection/all_features/holdout_predictions.rds")
+saveRDS(phylo_predictions, "output/all_data/infection/phylogeny/holdout_predictions.rds")

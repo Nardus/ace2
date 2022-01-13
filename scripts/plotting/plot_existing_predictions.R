@@ -6,92 +6,57 @@ suppressPackageStartupMessages({
   library(tidyr)
   library(stringr)
   library(readr)
-  library(scales)
-  library(cluster)
+  library(yardstick)
   library(ape)
   library(ggplot2)
   library(ggtree)
+  library(ggtext)
   library(vipor)
   library(cowplot)
+  
+  source("scripts/utils/timetree_constants.R")
+  source("scripts/plotting/plotting_constants.R")
 })
 
-source("scripts/plotting/plotting_constants.R")
-
-
-timetree <- read.tree("data/internal/timetree_amniota.nwk")
-taxonomy_table <- readRDS("data/calculated/taxonomy.rds")
 
 infection_data <- readRDS("data/calculated/cleaned_infection_data.rds") %>% 
   mutate(infected = factor(.data$infected, levels = c("True", "False")))
 
-shedding_data <- readRDS("data/calculated/cleaned_shedding_data.rds") %>% 
-  mutate(shedding = factor(.data$shedding, levels = c("True", "False")),)
-
 virus_data_infection <- readRDS("output/plots/intermediates/virus_data_infection.rds")
 
-existing_predictions <- read_csv("data/internal/existing_predictions.csv",
-                                 col_types = cols(raw_score = "d",
-                                                  reverse_score = "l",
-                                                  .default = "c"))
+timetree <- read.tree("data/internal/timetree_amniota.nwk")
+
+prediction_dendrogram <- readRDS("output/plots/intermediates/prediction_dendrogram.rds")
+all_predictions <- readRDS("output/plots/intermediates/unified_predictions.rds")
 
 
-# ---- Filter to mammals and birds -----------------------------------------------------------------
-# - Restrict to species for which ACE2 sequences are available (fischhoff2021a in particular 
-#   contains many species which cannot be predicted in any other study)
-# - Of these, use mammals and birds only  <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TODO
-existing_predictions <- existing_predictions %>%
-  filter(.data$species %in% c(taxonomy_table$species, taxonomy_table$subspecies)) %>% 
-  #mutate(species = case_when(.data$species == "Canis lupus familiaris" ~ "Canis familiaris",
-  #                           TRUE ~ .data$species),
-  #       species = str_extract(.data$species, "^[[:alpha:]]+ [[:alpha:]]+")) %>%  # Remove subspecies info
-  filter(.data$species %in% infection_data$species) %>% 
-  group_by(.data$species, .data$citation_key, .data$prediction_type, .data$predictor, .data$reverse_score) %>% 
-  summarise(raw_score = mean(.data$raw_score), .groups = "drop") # Average across subspecies
+# ---- Filter to species with known infection data -------------------------------------------------
+all_predictions <- all_predictions %>%
+  filter(.data$species %in% infection_data$species)
 
-
-# ---- Make scores comparable ----------------------------------------------------------------------
-# - All scores should be ascending, meaning a higher value = more likely to be positive
-# - Rescale values from each study to lie in [0, 1], so we can use a single colour scale in the plot
-existing_predictions <- existing_predictions %>% 
+# Remove studies with <10 species remaining (to reduce clutter)
+all_predictions <- all_predictions %>% 
   group_by(.data$citation_key) %>% 
-  mutate(scaled_score = if_else(.data$reverse_score, .data$raw_score * -1, .data$raw_score),
-         scaled_score = rescale(.data$scaled_score, to = c(0, 1)))
+  filter(n() >= 10) %>% 
+  ungroup()
 
-
-# ---- Correlation between studies -----------------------------------------------------------------
-score_mat <- existing_predictions %>% 
-  select(.data$species, .data$citation_key, .data$scaled_score) %>% 
-  pivot_wider(id_cols = "species", names_from = "citation_key", values_from = "scaled_score") %>% 
-  column_to_rownames("species")
-
-cor_mat <- cor(score_mat, use = "pairwise.complete", method = "spearman")
-
-# Assume studies with no overlap have no correlation:
-cor_mat <- replace(cor_mat, is.na(cor_mat), 0)
-
-# Hierarchical clustering by correlation
-prediction_clusters <- agnes(1 - cor_mat, diss = TRUE)
-prediction_dendrogram <- as.phylo(as.hclust(prediction_clusters))
+prediction_dendrogram <- keep.tip(prediction_dendrogram, unique(all_predictions$citation_key))
 
 
 # ---- Prepare phylogeny ---------------------------------------------------------------------------
 # Correct names
 timetree$tip.label <- str_replace(timetree$tip.label, "_", " ")
 
-name_replacements <- c("Canis lupus" = "Canis familiaris",
-                       "Neophocaena phocaenoides" = "Neophocaena asiaeorientalis",
-                       "Monachus schauinslandi" = "Neomonachus schauinslandi")
-
-stopifnot(all(names(name_replacements) %in% timetree$tip.label))
+stopifnot(all(names(TIMETREE_TAXONOMY_CORRECTIONS) %in% timetree$tip.label))
 
 timetree$tip.label <- with(timetree,
-                           if_else(tip.label %in% names(name_replacements),
-                                   as.character(name_replacements[tip.label]),
+                           if_else(tip.label %in% names(TIMETREE_TAXONOMY_CORRECTIONS),
+                                   as.character(TIMETREE_TAXONOMY_CORRECTIONS[tip.label]),
                                    tip.label))
 
-stopifnot(all(existing_predictions$species %in% timetree$tip.label))
+stopifnot(all(all_predictions$species %in% timetree$tip.label))
 
-timetree <- keep.tip(timetree, unique(existing_predictions$species))
+timetree <- keep.tip(timetree, unique(all_predictions$species))
 
 
 # ---- Plot main overview --------------------------------------------------------------------------
@@ -112,7 +77,7 @@ annotated_tree <- ggtree(timetree, aes(colour = infected)) %<+% annotation_data
 
 phylo_panel <- annotated_tree +
   geom_rootedge(rootedge = 10) +
-  scale_colour_manual(values = c(True = "#EE7733", False = "#009988"), 
+  scale_colour_manual(values = INFECTION_STATUS_COLOURS, 
                       na.value = "grey30",
                       guide = "none") +
   scale_x_continuous(expand = expansion(add = 0)) +
@@ -128,7 +93,7 @@ phylo_panel <- revts(phylo_panel)
 
 
 # Study correlation dendrogram
-dendro_panel <- ggtree(prediction_dendrogram) +
+dendro_panel <- ggtree(prediction_dendrogram, ladderize = FALSE) +
   scale_x_reverse(expand = expansion(add = c(0.002, 0.008))) +
   scale_y_discrete(expand = expansion(add = 0.2)) +
   coord_flip() +
@@ -140,23 +105,27 @@ dendro_panel <- ggtree(prediction_dendrogram) +
 observed_status <- infection_data %>% 
   select(.data$species, .data$infected, .data$evidence_level)
 
-existing_predictions <- existing_predictions %>% 
+all_predictions <- all_predictions %>% 
   left_join(observed_status, by = "species") %>% 
   mutate(species = factor(.data$species, levels = get_tree_order(phylo_panel)),
          citation_key = factor(.data$citation_key, levels = get_tree_order(dendro_panel)))
 
-study_labels <- existing_predictions %>% 
+study_label_df <- all_predictions %>% 
   distinct(.data$citation_key, .data$prediction_type, .data$predictor) %>% 
   mutate(predictor = if_else(.data$predictor == "binding affinity change relative to humans",
-                             "binding affinity change\nrelative to humans", .data$predictor),
-         study_label = str_to_sentence(.data$citation_key),
-         study_label = str_replace(.data$study_label, "([[:digit:]]{4})[[:alpha:]]*$", " et al., \\1")) %>% 
-  str_glue_data("{study_label}\n({predictor})")
+                             "binding affinity change<br/>relative to humans", .data$predictor),
+         study_label = as.character(.data$citation_key),
+         study_label = if_else(startsWith(.data$study_label, "This study"), "**This study**", 
+                               .data$study_label),
+         study_label = str_to_sentence(.data$study_label),
+         study_label = str_replace(.data$study_label, "([[:digit:]]{4})[[:alpha:]]*$", " *et al.*, \\1"),
+         study_label_long = paste0(.data$study_label, "<br/>(", .data$predictor, ")"))
 
-names(study_labels) <- unique(as.character(existing_predictions$citation_key))
+study_labels <- study_label_df$study_label_long
+names(study_labels) <- as.character(study_label_df$citation_key)
 
 
-data_panel <- ggplot(existing_predictions) +
+data_panel <- ggplot(all_predictions) +
   geom_hline(aes(yintercept = species, linetype = infected), colour = "grey92", size = 0.4) +
   geom_tile(aes(x = citation_key, y = species, fill = scaled_score)) +
   
@@ -165,17 +134,18 @@ data_panel <- ggplot(existing_predictions) +
   scale_x_discrete(labels = study_labels, expand = expansion(add = 0)) +
   scale_y_discrete(expand = expansion(add = 0.5), position="right") +
   
-  labs(x = "Prediction", y = NULL) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+  labs(x = "Prediction source", y = NULL) +
+  theme(axis.text.x = element_markdown(angle = 90, hjust = 1, vjust = 0.5),
         axis.text.y = element_text(face = "italic"),
+        plot.background = element_blank(),
         legend.position="none",
-        plot.margin = margin(t = 0, r = 5.5, b = 5.5, l = 0))
+        plot.margin = margin(t = 1, r = 5.5, b = 5.5, l = 1))
 
 
 
 # Combine
 shared_legend <- get_legend(
-  ggplot(existing_predictions, aes(x = citation_key, y = scaled_score, fill = scaled_score,
+  ggplot(all_predictions, aes(x = citation_key, y = scaled_score, fill = scaled_score,
                                    colour = infected, linetype = infected)) +
     geom_line() +
     geom_point(shape = 21, colour = "grey20") +
@@ -184,50 +154,203 @@ shared_legend <- get_legend(
                           guide = guide_legend(order = 2, keywidth = unit(1.25, "lines"))) +
     scale_colour_manual(values = c(True = "#EE7733", False = "#009988"), 
                         na.value = "grey30", guide = guide_legend(order = 2)) +
-    labs(fill = "Predicted score\n(scaled)", colour = "Infected", linetype = "Infected")
+    labs(fill = "Scaled score", colour = "Infected", linetype = "Infected")
 )
 
 phylo_panel2 <- phylo_panel +
-  annotation_custom(shared_legend, xmin = -500, ymin = 20)
+  annotation_custom(shared_legend, xmin = -420, ymin = 20)
 
 overview_plot <- plot_grid(NULL, dendro_panel,
                            phylo_panel2, data_panel,
-                           nrow = 2, rel_heights = c(1, 20), rel_widths = c(1, 5))
-  
+                           nrow = 2, rel_heights = c(1, 20), rel_widths = c(1.2, 5))
 
-# ---- Plot summary panels -------------------------------------------------------------------------
-evidence_labels <- c("1" = "Observed infection",
-                     "2" = "Experimental infection",
-                     "3" = "Cell culture",
-                     "4" = "Cell culture (het-ACE2)")
 
-jittered_predictions <- existing_predictions %>% 
+# ---- Binary predictions --------------------------------------------------------------------------
+# Not all studies give binary predictions - we can't assign a cutoff after the fact
+# For Damas et al., consider "Very high" to "medium" as a positive prediction
+binary_preds <- all_predictions %>% 
+  filter(!is.na(.data$prediction)) %>% 
+  mutate(observed = .data$infected == "True",
+         binary_pred = case_when(startsWith(as.character(.data$citation_key), "This study") ~ .data$prediction == "True",
+                                 .data$citation_key == "damas2020" ~ .data$prediction %in% c("Very High", "High", "Medium"),
+                                 TRUE ~ .data$prediction == "TRUE"))
+
+# Check that all cases were caught:
+needs_correction <- binary_preds %>% 
+  mutate(citation_key = as.character(.data$citation_key),
+         nn = startsWith(.data$citation_key, "This study") | .data$citation_key == "damas2020") %>% 
+  pull(.data$nn)
+
+stopifnot(all(binary_preds$prediction[!needs_correction] %in% c("TRUE", "FALSE")))
+
+# Sample size by study
+sample_size <- binary_preds %>% 
   group_by(.data$citation_key) %>% 
-  mutate(x_offset = offsetX(.data$scaled_score, .data$infected)) %>% 
-  ungroup() %>% 
-  mutate(adjusted_x = as.numeric(.data$infected) + .data$x_offset) %>% 
-  left_join(virus_data_infection, by = "species")
+  summarise(n = n(),
+            .groups = "drop")
 
-summary_plot <- ggplot(existing_predictions, aes(x = infected, y = scaled_score)) +
-  geom_boxplot(outlier.colour = NA) +
-  geom_point(aes(x = adjusted_x, shape = virus, fill = factor(evidence_level)), colour = "grey40",
-             data = jittered_predictions) +
-  facet_wrap(vars(citation_key), labeller = as_labeller(study_labels),
-             ncol = 3) +
-  scale_fill_brewer(palette = "YlGnBu", direction = - 1, labels = evidence_labels, 
-                    guide = guide_legend(order = 1, override.aes = list(shape = 22), ncol = 2)) +
-  scale_shape_manual(values = VIRUS_SHAPES, guide = guide_legend(order = 2, ncol = 2)) +
-  labs(x = "Infected", y = "Predicted score (scaled)", fill = "Best evidence", shape = "Virus") +
+
+# Simpler study labels
+simple_label_df <- study_label_df %>% 
+  mutate(citation_key = as.character(.data$citation_key),
+         study_label = if_else(startsWith(.data$citation_key, "This study"), 
+                               sprintf("**%s**", str_to_sentence(.data$predictor)),
+                               .data$study_label))
+
+simple_labels <- simple_label_df$study_label
+names(simple_labels) <- simple_label_df$citation_key
+
+# Plot
+p_samplesize <- ggplot(sample_size, aes(x = citation_key, y = n)) +
+  geom_col(colour = "grey20", fill = "grey50") +
+  scale_y_continuous(limits = c(0, 100), expand = expansion(0.02)) +
+  labs(y = "Number of species") +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank())
+
+
+# ---- Sensitivity/specificity ---------------------------------------------------------------------
+class_accuracies <- binary_preds %>% 
+  group_by(.data$citation_key, .data$infected) %>% 
+  summarise(n_accurate = sum(.data$observed == .data$binary_pred),
+            n_total = n(),
+            .groups = "keep") %>% 
+  mutate(accuracy = .data$n_accurate/.data$n_total,
+         lower = binom.test(.data$n_accurate, .data$n_total)$conf.int[1],
+         upper = binom.test(.data$n_accurate, .data$n_total)$conf.int[2]) %>% 
+  ungroup()
+
+# Sensitivity
+sens <- class_accuracies %>% 
+  filter(.data$infected == "True")
+
+p_sens <- ggplot(sens, aes(x = citation_key, y = accuracy, fill = infected)) +
+  geom_col(colour = "grey20") +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
+  geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
+  scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
+  scale_fill_manual(values = INFECTION_STATUS_COLOURS, guide = "none") +
+  labs(y = "Sensitivity") +
+  theme(strip.text = element_blank(), 
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank())
+
+# Specificity
+spec <- class_accuracies %>% 
+  filter(.data$infected == "False")
+
+p_spec <- ggplot(spec, aes(x = citation_key, y = accuracy, fill = infected)) +
+  geom_col() +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
+  geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
+  scale_x_discrete(labels = simple_labels) +
+  scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
+  scale_fill_manual(values = INFECTION_STATUS_COLOURS, guide = "none") +
+  labs(x = "Prediction source", y = "Specificity") +
+  theme(axis.text.x = element_markdown(angle = 90, hjust = 1, vjust = 0.5))
+
+
+# Combined
+cl_spread <- sens %>% 
+  rename(sens = .data$accuracy,
+         sens_lower = .data$lower,
+         sens_upper = .data$upper,
+         n_pos = .data$n_total) %>% 
+  left_join(spec, by = "citation_key") %>% 
+  rename(spec = .data$accuracy,
+         spec_lower = .data$lower,
+         spec_upper = .data$upper,
+         n_neg = .data$n_total) %>% 
+  mutate(sample_size = .data$n_pos + .data$n_neg)
+
+
+cl_labels <- cl_spread %>% 
+  filter(.data$sample_size >= 60) %>% 
+  left_join(simple_label_df, by = "citation_key")
+
+
+cl_plot <- ggplot(cl_spread, aes(x = sens, y = spec, colour = sample_size)) +
+  
+  geom_abline(linetype = 2, colour = "grey20") +
+  geom_vline(xintercept = 0.5, colour = "grey70", linetype = 2) +
+  geom_hline(yintercept = 0.5, colour = "grey70", linetype = 2) +
+  
+  geom_point() +
+  geom_errorbar(aes(xmin = sens_lower, xmax = sens_upper), width = 0.02) +
+  geom_errorbar(aes(ymin = spec_lower, ymax = spec_upper), width = 0.02) +
+  
+  geom_richtext(aes(label = study_label), data = cl_labels,
+                size = 1.5, label.color = NA, 
+                nudge_x = -0.02, nudge_y = -0.02, angle = 90, hjust = 1,
+                label.padding = unit(0, "lines")) +
+  
+  labs(x = "Sensitivity", y = "Specificity", colour = "Number of\nspecies") +
+  lims(x = c(0, 1), y = c(0, 1)) +
+  coord_equal(expand = FALSE) +
+  scale_colour_distiller(palette = "PuBu", direction = 1) +
   theme(legend.position = "top",
-        legend.box = "vertical",
-        strip.text = element_text(size = 5, margin = margin(2.5, 2.5, 2.5, 2.5)))
+        plot.margin = margin(t = 5.5, r = 8, b = 5.5, l = 5.5))
 
 
 # ---- Output --------------------------------------------------------------------------------------
-final_figure <- plot_grid(overview_plot, summary_plot, 
-                          nrow = 1, rel_widths = c(2, 1.15),
-                          labels = c("A", "B"))
+p_top <- plot_grid(cl_plot, p_samplesize, p_sens, p_spec,
+                   ncol = 1, rel_heights = c(3, 1, 1.2, 2),
+                   align = "v", axis = "lr",
+                   labels = c("B", "C", "", ""),
+                   hjust = 0.5, vjust = c(1.5, 0.5))
+
+final_figure <- plot_grid(overview_plot, p_top, 
+                          nrow = 1, rel_widths = c(1.9, 1),
+                          labels = c("A", ""))
 
 ggsave2("output/plots/existing_predictions.pdf", 
         final_figure, 
-        width = 7, height = 7)
+        width = 8, height = 8)
+
+
+# ---- Stats/citations for text --------------------------------------------------------------------
+all_predictions <- readRDS("output/plots/intermediates/unified_predictions.rds") # Unfiltered version
+
+# Correlation
+score_mat <- all_predictions %>% 
+  select(.data$species, .data$citation_key, .data$scaled_score) %>% 
+  pivot_wider(id_cols = "species", names_from = "citation_key", values_from = "scaled_score") %>% 
+  column_to_rownames("species")
+
+cor_mat <- cor(score_mat, use = "pairwise.complete", method = "spearman")
+
+
+# - Summarize
+dfcor <- cor_mat %>% 
+  as_tibble(rownames = "from") %>% 
+  pivot_longer(-.data$from, names_to = "to", values_to = "cor") %>% 
+  filter(.data$from != .data$to) %>% 
+  group_by(.data$from) %>% 
+  mutate(min_cor = min(.data$cor, na.rm = TRUE),
+         max_cor = max(.data$cor, na.rm = TRUE)) %>% 
+  ungroup()
+
+# - Report
+cat("\n\nMinimum correlations:\n")
+dfcor %>% 
+  filter(.data$cor == .data$min_cor) %>% 
+  select(-.data$min_cor, -.data$max_cor) %>% 
+  arrange(.data$cor) %>% 
+  print()
+
+cat("\n\nMaximum correlation")
+dfcor %>% 
+  filter(.data$cor == .data$max_cor) %>% 
+  select(-.data$min_cor, -.data$max_cor) %>% 
+  arrange(.data$cor) %>% 
+  print()
+
+
+# - Overlap with our models:
+ace2_spp <- all_predictions$species[all_predictions$citation_key == "This study (ACE2-based)"]
+phylo_spp <- all_predictions$species[all_predictions$citation_key == "This study (host phylogeny)"]
+huang_spp <- all_predictions$species[all_predictions$citation_key == "huang2020"]
+alexander_spp <- all_predictions$species[all_predictions$citation_key == "alexander2020"]
+
+cat("\nACE2-based model shares", sum(ace2_spp %in% huang_spp), "with Huang et al. 2020\n")
+cat("Phylogeny-based model shares", sum(ace2_spp %in% alexander_spp), "with Alexander et al. 2020\n")

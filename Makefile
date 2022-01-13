@@ -2,7 +2,7 @@
 
 .NOTPARALLEL:
 .PHONY: all
-all: output/plots/performance.png
+all: plots
 
 
 # ---- Data ----------------------------------------------------------------------------------------
@@ -257,8 +257,16 @@ train:	train_feature_subsets \
 .PRECIOUS: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
 
 
-# ---- Predict other species for which ACE2 sequences are available --------------------------------
+# ---- Train an ensemble model ---------------------------------------------------------------------
+output/all_data/infection/ensemble/predictions.rds: $(TRAINING_REQUIREMENTS) \
+													data/calculated/features_phylogeny_eigenvectors.rds \
+													output/all_data/infection/all_features/predictions.rds \
+													output/all_data/infection/phylogeny/predictions.rds
+	Rscript scripts/train_ensemble.R
 
+
+# ---- Predict other species for which ACE2 sequences are available --------------------------------
+# Phylogeny model predictions will be made simultaneously
 output/all_data/infection/all_features/holdout_predictions.rds: output/all_data/infection/all_features/predictions.rds \
 																data/calculated/cleaned_infection_data.rds \
 																data/internal/NCBI_ACE2_orthologs.csv \
@@ -268,7 +276,8 @@ output/all_data/infection/all_features/holdout_predictions.rds: output/all_data/
 
 # ---- Plots ---------------------------------------------------------------------------------------
 # Diagnostic plots
-output/plots/performance.png: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
+output/plots/performance.png: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS) \
+								output/all_data/infection/ensemble/predictions.rds
 	Rscript scripts/plotting/plot_performance_diagnostics.R
 
 # Data overview plots
@@ -286,22 +295,18 @@ output/plots/raw_data_overview.pdf: data/internal/timetree_amniota.nwk \
 									data/internal/ace2_accessions.csv
 	Rscript scripts/plotting/plot_observations_phylogeny.R
 
-output/plots/existing_predictions.pdf:	output/plots/raw_data_overview.pdf \
-										data/internal/existing_predictions.csv \
-										output/all_data/infection/all_features/holdout_predictions.rds
-	Rscript scripts/plotting/plot_existing_predictions.R
 
-
-output/plots/phylogeny_congruence.pdf: data/internal/timetree_amniota.nwk \
-												data/internal/ace2_accessions.csv \
-												data/internal/NCBI_ACE2_orthologs.csv \
-												data/calculated/features_pairwise_dists.rds
+output/plots/phylogeny_congruence.pdf:	data/internal/timetree_amniota.nwk \
+										data/internal/ace2_accessions.csv \
+										data/internal/NCBI_ACE2_orthologs.csv \
+										data/calculated/features_pairwise_dists.rds
 	Rscript scripts/plotting/plot_phylogeny_congruence.R
 
 
 # Accuracy
 # - Main figure
-output/plots/accuracy.pdf: $(FEATURE_MODELS) $(L1_L2_MODELS)
+output/plots/accuracy.pdf:	$(FEATURE_MODELS) $(L1_L2_MODELS) \
+							output/all_data/infection/ensemble/predictions.rds
 	Rscript scripts/plotting/plot_accuracy.R
 
 # - Data quality (evidence level)
@@ -311,26 +316,45 @@ output/plots/accuracy_data_subsets.pdf: $(L1_L2_MODELS) $(L3_MODELS)
 
 # Variable importance
 # - Cluster sites by correlation
-output/plots/intermediates/feature_clusters.rds: output/all_data/infection/all_features/predictions.rds
+output/plots/intermediates/feature_clusters.rds: data/calculated/features_variable_sites.rds
 	Rscript scripts/plotting/get_clustered_sites.R
 
 # - Plot
-output/plots/varimp_overview_%.png: output/all_data/%/all_features/feature_importance.rds \
+output/plots/varimp_overview.pdf:	output/all_data/infection/all_features/feature_importance.rds \
 									output/plots/intermediates/feature_clusters.rds
 	Rscript scripts/plotting/plot_varimp_overview.R $< $@
-
-# TODO: add for:
-# - output/plots/shap_interaction_infection.png (plot_varimp_infection.R)
-# - output/plots/varimp_detail_infection.png (plot_varimp_infection.R)
 
 
 
 # Predictions:
+# - Comparison to existing predictions
+output/plots/intermediates/prediction_dendrogram.rds: 	data/internal/existing_predictions.csv \
+														output/all_data/infection/all_features/predictions.rds \
+														output/all_data/infection/phylogeny/predictions.rds \
+														output/all_data/infection/all_features/holdout_predictions.rds
+	Rscript scripts/plotting/get_prediction_dendrogram.R
+
+
+output/plots/existing_predictions.pdf:	data/internal/timetree_amniota.nwk \
+										output/plots/intermediates/prediction_dendrogram.rds \
+										output/plots/raw_data_overview.pdf \
+										data/internal/existing_predictions.csv \
+										output/all_data/infection/all_features/holdout_predictions.rds
+	Rscript scripts/plotting/plot_existing_predictions.R
+
+
+# TODO: add SI plot
+
+
+
 # - Get taxonomy
+# TODO: taxonomy table still needed?
 output/plots/intermediates/taxonomy_table.rds: output/all_data/infection/all_features/holdout_predictions.rds
 	Rscript scripts/plotting/get_taxonomy.R
 
 # - Prediction overview
+
+
 output/plots/holdout_predictions.png: output/all_data/infection/all_features/holdout_predictions.rds \
 										output/plots/intermediates/taxonomy_table.rds
 	Rscript scripts/plotting/plot_holdout_predictions.R
@@ -347,5 +371,8 @@ output/plots/prediction_maps.png: data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.
 
 .PHONY: plots
 plots: 	report_data_overview \
-		output/plots/performance.png \
-		output/plots/varimp_overview_infection.png
+		output/plots/raw_data_overview.pdf \
+		output/plots/phylogeny_congruence.pdf \
+		output/plots/accuracy.pdf \
+		output/plots/accuracy_data_subsets.pdf \
+		output/plots/varimp_overview.pdf

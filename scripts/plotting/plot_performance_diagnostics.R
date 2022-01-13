@@ -1,4 +1,4 @@
-## Plot prediction accuracy / performance measures
+## Plot prediction accuracy / performance measures (diagnostic plots, not used in manuscript)
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -7,29 +7,50 @@ suppressPackageStartupMessages({
   library(stringr)
   library(ggplot2)
   library(cowplot)
-  library(ModelMetrics)
 })
 
 source("scripts/utils/output_utils.R")
+source("scripts/plotting/plotting_constants.R")
 
 # ---- Read all available predictions --------------------------------------------------------------
 
-datasets <- c("all_data", "l2_data", "l3_data", "l1+2_data")
+datasets <- c("all_data", "l2_data", "l3+4_data", "l1+2_data")
 
 test_preds <- lapply(datasets, load_all_runs) %>% 
   bind_rows()
 
+infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")
 
-# ---- Plotting order -----------------------------------------------------------------------------
+
+# ---- Plotting order ------------------------------------------------------------------------------
 # TODO: clean labels for each run_id...
 
-RUN_ORDER <- c("combined", "combined+feature_selection_10")
+RUN_ORDER <- c("aa_categorical",
+               "aa_properties", 
+               "aa_distance",
+               "distance_to_humans",
+               "distance_to_positive",
+               "binding_affinity",
+               "all_features")
 
 test_preds <- test_preds %>% 
   mutate(run_id = factor(.data$run_id, levels = RUN_ORDER))
 
 
-# ---- Overall accuracy ---------------------------------------------------------------------------
+# ---- Ability to separate classes -----------------------------------------------------------------
+
+# NOTE: these scores aren't comparable - different CV folds are separating classes differently
+#       (check colours [predictions])
+test_preds %>% 
+  filter(.data$dataset == "all_data") %>% 
+  ggplot(aes(x = label, y = p_true)) +
+    geom_boxplot(outlier.color = NA) +
+    geom_jitter(aes(colour = prediction)) +
+    facet_grid(rows = vars(response_var), cols = vars(run_id), scales = "free_y") +
+    labs(title = "all_data")
+
+
+# ---- Overall accuracy ----------------------------------------------------------------------------
 overall_accuracies <- test_preds %>% 
   group_by(.data$dataset, .data$response_var, .data$run_id) %>% 
   summarise(n = n(),
@@ -44,7 +65,7 @@ p_overall <- ggplot(overall_accuracies, aes(x = run_id, y = accuracy, fill = run
   labs(x = "feature set") +
   ylim(c(0, 1)) +
   facet_grid(cols = vars(dataset), rows = vars(response_var), scales = "free_x", space = "free_x") +
-  guides(fill = FALSE) +
+  guides(fill = "none") +
   theme_bw(base_size = 5) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
   ggtitle("Overall accuracy")
@@ -75,6 +96,7 @@ p_class <- ggplot(class_accuracies, aes(x = factor(run_id), y = accuracy, fill =
 # ---- Accuracy by class and evidence level ---------------------------------------------------------
 # Only makes sense for "all_data" and "l1+2" runs
 level_accuracies <- test_preds %>% 
+  left_join(infection_data, by = "species") %>% 
   group_by(.data$dataset, .data$response_var, .data$run_id, .data$label, .data$evidence_level) %>% 
   summarise(n = n(),
             accuracy = sum(.data$label == .data$prediction) / n(),
@@ -98,7 +120,7 @@ make_level_plot <- function(data_name, acc_data = level_accuracies, lab_data = l
     labs(x = "evidence level") +
     scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
     facet_grid(rows = vars(response_var), cols = vars(label)) +
-    guides(fill = FALSE) +
+    guides(fill = "none") +
     theme_bw(base_size = 5) +
     ggtitle(sprintf("Accuracy by evidence level\n(%s model)", data_name))
 }
