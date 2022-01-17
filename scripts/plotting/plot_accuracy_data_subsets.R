@@ -56,7 +56,6 @@ final_class_accuracies <- final_preds %>%
          upper = binom.test(.data$n_accurate, .data$n_total)$conf.int[2]) %>% 
   ungroup()
 
-
 # Sensitivity:
 sens <- final_class_accuracies %>% 
   filter(.data$label == "True")
@@ -69,7 +68,6 @@ p_sens <- ggplot(sens, aes(x = evidence_label, y = accuracy)) +
   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
   
   geom_text(label = "N/A", hjust = 0, size = 2, data = sens_missing) +
-  geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
   
   scale_x_discrete(drop = FALSE) +
   scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
@@ -93,7 +91,6 @@ p_spec <- ggplot(spec, aes(x = evidence_label, y = accuracy)) +
   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
   
   geom_text(label = "N/A", hjust = 0, size = 2, data = sens_missing) +
-  geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
   
   scale_x_discrete(drop = FALSE) +
   scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
@@ -132,24 +129,17 @@ p_data_subset <- ggplot(subset_data_available, aes(x = dataset_label, y = n, fil
 subset_accuracies <- subset_preds %>% 
   group_by(.data$dataset_label) %>% 
   summarise(n_accurate = sum(.data$label == .data$prediction),
-            n_positive = sum(.data$label == "True"),
             n_total = n(),
             .groups = "keep") %>% 
   mutate(accuracy = .data$n_accurate/.data$n_total,
          lower = binom.test(.data$n_accurate, .data$n_total)$conf.int[1],
-         upper = binom.test(.data$n_accurate, .data$n_total)$conf.int[2],
-         random_accuracy = .data$n_positive / .data$n_total,
-         dataset_numeric = as.numeric(.data$dataset_label)) %>% 
+         upper = binom.test(.data$n_accurate, .data$n_total)$conf.int[2]) %>% 
   ungroup()
 
 
 p_accuracy_subset <- ggplot(subset_accuracies, aes(x = dataset_label, y = accuracy)) +
   geom_col(colour = "grey20", fill = "grey50") +
   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
-  
-  geom_segment(aes(x = dataset_numeric - 0.5, xend = dataset_numeric + 0.5, 
-                   y = random_accuracy, yend = random_accuracy),
-               linetype = 2, colour = "grey10") +
   
   scale_x_discrete(drop = FALSE) +
   scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
@@ -179,7 +169,6 @@ sens_subset <- subset_class_accuracies %>%
 p_sens_subset <- ggplot(sens_subset, aes(x = dataset_label, y = accuracy, fill = label)) +
   geom_col(colour = "grey20") +
   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
-  geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
   scale_x_discrete(drop = FALSE) +
   scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
   scale_fill_manual(values = INFECTION_STATUS_COLOURS, guide = "none") +
@@ -197,7 +186,6 @@ spec_subset <- subset_class_accuracies %>%
 p_spec_subset <- ggplot(spec_subset, aes(x = dataset_label, y = accuracy, fill = label)) +
   geom_col(colour = "grey20") +
   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
-  geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
   scale_x_discrete(drop = FALSE) +
   scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
   scale_fill_manual(values = INFECTION_STATUS_COLOURS, guide = "none") +

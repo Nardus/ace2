@@ -140,8 +140,7 @@ ALL_FEATURE_SETS =	--aa_categorical \
 output/all_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
-		--random_seed 77043274 \
-		--n_threads 8
+		--random_seed 77043274
 
 
 # ---- Training: individual feature sets ----------------------------------------------------------
@@ -204,24 +203,21 @@ output/l2_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
 		--evidence_min 2 --evidence_max 2 \
-		--random_seed 23556284 \
-		--n_threads 8
+		--random_seed 23556284
 
 # - Level 3-4 (cell culture)
 output/l3+4_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
 		--evidence_min 3 --evidence_max 4 \
-		--random_seed 43564215 \
-		--n_threads 8
+		--random_seed 43564215
 
 # - Level 1 and 2 (i.e. exclude cell culture, in case it makes things worse)
 output/l1+2_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
 		--evidence_min 1 --evidence_max 2 \
-		--random_seed 28641685 \
-		--n_threads 8
+		--random_seed 28641685
 
 
 # ---- Enemurate training combinations ------------------------------------------------------------
@@ -348,7 +344,7 @@ output/plots/existing_predictions.pdf:	data/internal/timetree_amniota.nwk \
 	Rscript scripts/plotting/plot_existing_predictions.R
 
 
-# TODO: add SI plot
+# TODO: add SI plot (plot_prediction_comparison.R)
 
 
 

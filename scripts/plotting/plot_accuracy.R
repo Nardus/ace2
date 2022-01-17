@@ -128,7 +128,8 @@ ggsave2("output/plots/accuracy.pdf", p_combined,
 
 
 # ---- Values quoted in text -----------------------------------------------------------------------
-focal_models <- RUN_LABELS[c("all_features", "phylogeny", "ensemble")]
+focal_models <- RUN_LABELS[c("all_features", "phylogeny", "ensemble",
+                             "aa_distance", "binding_affinity")]
 
 cat("Overall accuracy:\n")
 overall_accuracies %>% 
