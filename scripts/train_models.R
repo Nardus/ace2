@@ -90,7 +90,7 @@ if (INPUT$distance_to_positive)
   feature_prefixes <- c(feature_prefixes, "closest_positive_")
 
 if (INPUT$binding_affinity)
-  feature_prefixes <- c(feature_prefixes, "haddock_score")
+  feature_prefixes <- c(feature_prefixes, "haddock_score", "huang_score")
 
 if (INPUT$phylogeny)
   feature_prefixes <- c(feature_prefixes, "phylogeny")
