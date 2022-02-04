@@ -41,8 +41,17 @@ add_readable_feature_names <- function(x) {
                                     startsWith(.data$feature, "property_polarity") ~ "Polarity",
                                     startsWith(.data$feature, "property_hydrophobicity") ~ "Hydrophobicity",
                                     startsWith(.data$feature, "property_volume") ~ "Volume",
-                                    .data$feature == "haddock_score" ~ "HADDOCK binding score",
+                                    startsWith(.data$feature, "closest_positive") ~ "Minimum distance",
+                                    .data$feature %in% c("haddock_score", "huang_score") ~ "Binding affinity",
                                     TRUE ~ "Other"),
+           extra_info = case_when(.data$feature == "closest_positive_overall" ~ "all data",
+                                  .data$feature == "closest_positive_l1" ~ "observed infections",
+                                  .data$feature == "closest_positive_l2" ~ "experimental infections",
+                                  .data$feature == "closest_positive_l3" ~ "cell culture",
+                                  .data$feature == "closest_positive_l4" ~ "het-ACE2",
+                                  .data$feature == "haddock_score" ~ "Fischhoff et al.",
+                                  .data$feature == "huang_score" ~ "Huang et al.",
+                                  TRUE ~ NA_character_),
            feature_position = if_else(.data$feature_type %in% c("Consensus distance", "Amino acid identity",
                                                                 "Polarity", "Hydrophobicity", "Volume"),
                                       str_extract(.data$feature, "[[:digit:]]+$"), 
@@ -50,8 +59,13 @@ add_readable_feature_names <- function(x) {
            feature_position = as.integer(.data$feature_position),
            feature_position_corrected = as_human_coord_v(.data$feature_position),
            feature_label = case_when(.data$feature_type == "Other" ~ .data$feature,
-                                     .data$feature == "haddock_score" ~ .data$feature_type, 
-                                     TRUE ~ sprintf("%s (%d)", .data$feature_type, .data$feature_position_corrected)))
+                                     !is.na(.data$extra_info) ~ sprintf("%s\n(%s)",
+                                                                        .data$feature_type,
+                                                                        .data$extra_info),
+                                     !is.na(.data$feature_position) ~ sprintf("%s (%d)", 
+                                                                              .data$feature_type, 
+                                                                              .data$feature_position_corrected), 
+                                     TRUE ~ .data$feature_type))
 }
 
 

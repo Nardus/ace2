@@ -255,7 +255,7 @@ test_result <- binom.test(x = observed,
                           n = available,
                           p = exp_ratio)
 
-sprintf("%i of %i selected sites clustered with S-binding sites (%3.1f%%, p-value compared to expected ratio = %3.3f)",
+sprintf("%i of %i selected sites clustered with S-binding sites (%3.1f%%, p-value compared to expected ratio = %3.3f)\n\n",
         observed,
         available,
         test_result$estimate * 100,
