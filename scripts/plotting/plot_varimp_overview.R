@@ -32,8 +32,6 @@ suppressPackageStartupMessages({
   source("scripts/plotting/plotting_constants.R")
 })
 
-N_CORES <- 20
-
 feature_importance <- readRDS(INPUT$varimp_file)
 
 feature_clusters <- readRDS("output/plots/intermediates/feature_clusters.rds")
@@ -66,7 +64,8 @@ top_importance <- feature_importance %>%
   filter(.data$importance > 0) %>% 
   add_readable_feature_names() %>% 
   arrange(.data$importance) %>% 
-  mutate(feature_label = factor(.data$feature_label, levels = .data$feature_label)) %>% 
+  mutate(feature_label = factor(.data$feature_label, levels = .data$feature_label),
+         feature_type = factor(.data$feature_type)) %>% 
   left_join(feature_locations, by = "feature_position")
 
 # Add cluster info
@@ -93,6 +92,7 @@ p_overall_importance <- ggplot(top_importance, aes(x = feature_label, y = import
 
 # ---- Importance by site --------------------------------------------------------------------------
 site_labels <- top_importance %>% 
+  filter(!is.na(.data$feature_position)) %>% 
   group_by(.data$feature_position, .data$feature_position_corrected) %>% 
   summarise(total_importance = sum(.data$importance),
             .groups = "drop") %>% 
@@ -113,7 +113,7 @@ p_site_importance <- ggplot(site_importance, aes(x = site_label_continuous, y = 
                      sec.axis = sec_axis(~ ., name = "Correlated cluster",
                                          breaks = site_importance$site_label_continuous,
                                          labels = site_importance$cluster_label)) +
-  scale_fill_brewer(palette = "Set2", na.value = "grey60") +
+  scale_fill_brewer(palette = "Set2", na.value = "grey60", drop = FALSE) +
   labs(y = "Total effect magnitude", x = "Sequence position\n(human ACE2)", fill = "Measure")
 
 
@@ -166,26 +166,6 @@ p_cluster_importance <- plot_grid(p_cluster_overview, p_cluster_importance,
 
 
 # ---- Phylogenetic information in these sites -----------------------------------------------------
-get_entropy <- function(alignment_matrix) {
-  # Count amino acids at each site
-  counts <- apply(alignment_matrix, MARGIN = 2, FUN = table, simplify = FALSE) %>% 
-    sapply(data.frame, simplify = FALSE) %>% 
-    bind_rows(.id = "position") %>% 
-    pivot_wider(id_cols = "position", names_from = "Var1", values_from = "Freq", values_fill = 0)
-  
-  counts_mat <- counts %>% 
-    select(-.data$position) %>% 
-    data.frame()
-  
-  rownames(counts_mat) <- counts$position
-  
-  # Get Shannon entropy at each site
-  entropy <- diversity(counts_mat, index = "shannon")
-  
-  tibble(position = as.numeric(names(entropy)),
-         entropy = entropy)
-}
-
 ace2_alignment <- as.matrix(ace2_alignment)
 training_alignment <- ace2_alignment[unique(infection_data$ace2_accession), ]
 
@@ -216,25 +196,36 @@ p_entropy <- ggplot(entropy_training, aes(x = selected, y = entropy)) +
   
   scale_y_continuous(expand = expansion(add = c(0.1, 0.15))) +
   scale_colour_brewer(palette = "Set1", na.value = "grey60") +
-  labs(x = "Position retained", y = "Entropy", colour = "S-interaction")
+  labs(x = "Position retained", 
+       y = "Phylogenetic informativeness\n(Shannon entropy)", 
+       colour = "S-interaction")
 
 
 # ---- Combine--------------------------------------------------------------------------------------
 p_top <- plot_grid(p_overall_importance, p_site_importance, p_entropy,
-                   ncol = 3, rel_widths = c(1, 1.35, 1.5),
+                   ncol = 3, rel_widths = c(1.05, 1.3, 1),
                    labels = c("A", "B", "C"))
 
 p_combined <- plot_grid(p_top, p_cluster_importance,
-                        ncol = 1, rel_heights = c(1, 0.8),
+                        ncol = 1, rel_heights = c(1, 0.3),
                         labels = c("", "D"))
 
-ggsave2(INPUT$output_name, p_combined, width = 7, height = 4)
+ggsave2(INPUT$output_name, p_combined, width = 7, height = 5)
 
 
 # ---- Values mentioned in text --------------------------------------------------------------------
 cat("\n\nSequence positions given with reference to accesion:", human_acc, "\n\n")
 
+cat("Model uses", nrow(top_importance), "features, representing", nrow(site_labels), "sites:\n")
+print(table(top_importance$feature_type))
+
+cat("Site-specific features represent", n_distinct(site_labels$site_label), "amino acid positions\n")
+
 # S-interacting sites
+cat(sum(top_importance$feature_position_corrected %in% ALL_S_BINDING_INDS),
+    "included sites are known to interact with S\n")
+
+# Expected ratio
 s_clusters <- feature_clusters %>% 
   left_join(cluster_binding, by = "cluster") %>% 
   filter(!.data$feature_position_corrected %in% ALL_S_BINDING_INDS) %>% 
@@ -242,9 +233,8 @@ s_clusters <- feature_clusters %>%
 
 stopifnot(n_distinct(s_clusters$feature_position) == nrow(s_clusters))
 
-# Expected ratio
 exp_ratio <- sum(s_clusters$includes_binding_site) / nrow(s_clusters)
-sprintf("%3.1f%% of positions considered are correlated with an S-interacting site\n",
+sprintf("%3.1f%% of available positions are correlated with an S-interacting site\n",
         exp_ratio * 100) %>% 
   cat()
 

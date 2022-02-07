@@ -212,6 +212,15 @@ output/all_data/%/aa_distance_phylogeny/predictions.rds: $(TRAINING_REQUIREMENTS
 		--random_seed 34264755 \
 		--n_threads 20
 
+output/all_data/%/binding_affinity_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+														 		data/calculated/features_phylogeny_eigenvectors.rds
+	Rscript scripts/train_models.R $* $(@D) \
+		--binding_affinity \
+		--phylogeny \
+		--random_seed 34264755 \
+		--n_threads 20
+
+
 # ---- Training on data subsets ------------------------------------------------------------------------------------
 # As above, output format is "dataset/response_var/feature_set/*"
 # - All data models already trained during feature selection
@@ -354,6 +363,10 @@ output/plots/varimp_overview.pdf:	output/all_data/infection/all_features/feature
 									output/plots/intermediates/feature_clusters.rds
 	Rscript scripts/plotting/plot_varimp_overview.R $< $@
 
+
+output/plots/site_varimp_supplement.pdf:	output/all_data/infection/aa_distance/feature_importance.rds \
+											output/plots/intermediates/feature_clusters.rds
+	Rscript scripts/plotting/plot_site_varimp_supplement.R
 
 
 # Predictions:

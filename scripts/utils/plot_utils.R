@@ -1,6 +1,35 @@
 ## Utility functions for plotting
 
+library(seqinr)
+library(readr)
 library(stringr)
+
+# ---- Convert feature coordinates -----------------------------------------------------------------
+# Find the offset needed to make coordinates match human ace2 (count gaps added in alignment)
+alignment <- read.fasta("data/calculated/ace2_protein_alignment.fasta")
+seq_metadata <- read_csv("data/internal/ace2_accessions.csv", col_types = cols(.default = "c"))
+
+human_acc <- seq_metadata$ace2_accession[seq_metadata$species == "Homo sapiens"]
+human_seq <- alignment[[which(names(alignment) == human_acc)]]
+
+as_human_coord <- function(alignment_coord, human = human_seq) {
+  if (is.na(alignment_coord))
+    return(NA_integer_)
+  
+  if (human[alignment_coord] == "-")
+    return(NA_integer_) # position does not exist in human sequence
+  
+  gaps <- human == "-"
+  offset_by <- sum(gaps[1:alignment_coord])
+  
+  alignment_coord - offset_by
+}
+
+# vectorised version:
+as_human_coord_v <- function(alignment_coords) {
+  sapply(alignment_coords, as_human_coord, simplify = TRUE)
+}
+
 
 # ---- Human-readable feature names ----------------------------------------------------------------
 # Expects a data.frame with a column named "feature"
@@ -36,6 +65,28 @@ add_readable_feature_names <- function(x) {
                                                                               .data$feature_type, 
                                                                               .data$feature_position_corrected), 
                                      TRUE ~ .data$feature_type))
+}
+
+
+# ---- Sequence entropy ----------------------------------------------------------------------------
+get_entropy <- function(alignment_matrix) {
+  # Count amino acids at each site
+  counts <- apply(alignment_matrix, MARGIN = 2, FUN = table, simplify = FALSE) %>% 
+    sapply(data.frame, simplify = FALSE) %>% 
+    bind_rows(.id = "position") %>% 
+    pivot_wider(id_cols = "position", names_from = "Var1", values_from = "Freq", values_fill = 0)
+  
+  counts_mat <- counts %>% 
+    select(-.data$position) %>% 
+    data.frame()
+  
+  rownames(counts_mat) <- counts$position
+  
+  # Get Shannon entropy at each site
+  entropy <- diversity(counts_mat, index = "shannon")
+  
+  tibble(position = as.numeric(names(entropy)),
+         entropy = entropy)
 }
 
 
