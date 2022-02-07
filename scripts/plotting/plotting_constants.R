@@ -1,5 +1,8 @@
 ## Constants used across all plots
 
+# Site info
+source("scripts/utils/site_info.R")
+
 # Theme
 PLOT_THEME <- theme_bw(base_size = 7) +
   theme(strip.text = element_text(margin = margin(2.5, 2.5, 2.5, 2.5)),
@@ -27,18 +30,3 @@ EVIDENCE_LABELS <- c("1" = "Observed infection",
                      "2" = "Experimental infection",
                      "3" = "Cell culture",
                      "4" = "Cell culture (het-ACE2)")
-
-
-# Site info
-# Binding sites taken from human ACE2 genbank entry (NP_001358344.1)
-S_BINDING_SITES <- tribble(
-  ~start_pos, ~stop_pos, ~name,
-  30,         41,        "ECO:0000269|PubMed:15791205 1",
-  82,         84,        "ECO:0000269|PubMed:15791205 2",
-  353,        357,       "ECO:0000269|PubMed:15791205 3"
-)
-
-ALL_S_BINDING_INDS <- mapply(seq,
-                             from = S_BINDING_SITES$start_pos, 
-                             to = S_BINDING_SITES$stop_pos) %>% 
-  unlist()

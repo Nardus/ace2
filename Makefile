@@ -86,9 +86,11 @@ data/iucn_range_maps/MAMMALS_MARINE_AND_TERRESTRIAL.zip:
 # Extract
 data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp: data/external/iucn_base/Land_Masses_and_Ocean_Islands.zip
 	unzip -u -d $(@D) $<
+	touch $@
 
 data/iucn_range_maps/%.shp: data/iucn_range_maps/%.zip
 	unzip -u -d $(@D) $<
+	touch $@
 
 
 # ---- ACE2 alignment -----------------------------------------------------------------------
@@ -120,6 +122,10 @@ data/calculated/features_phylogeny_eigenvectors.rds: data/internal/timetree_amni
 													 data/internal/timetree_aves.nwk \
 													 data/calculated/cleaned_infection_data.rds
 	Rscript scripts/calculate_features_phylogeny.R
+
+data/calculated/s_binding_alignment_positions.rds: data/calculated/ace2_protein_alignment.fasta \
+												   data/internal/ace2_accessions.csv
+	Rscript scripts/calculate_features_s_binding.R
 
 
 # ---- Training: full model -----------------------------------------------------------------------
@@ -187,6 +193,24 @@ output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
 		--random_seed 34264755 \
 		--n_threads 10
 
+# ---- Training: variations on best model ---------------------------------------------------------
+# Best ACE2 model restricted to S-binding sites only:
+output/all_data/%/aa_distance_s_binding/predictions.rds: $(TRAINING_REQUIREMENTS) \
+														 data/calculated/s_binding_alignment_positions.rds
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_distance \
+		--s_binding_only \
+		--random_seed 58498184 \
+		--n_threads 20						 
+
+# Phylogeny combined with the best ACE2 model
+output/all_data/%/aa_distance_phylogeny/predictions.rds: $(TRAINING_REQUIREMENTS) \
+														 data/calculated/features_phylogeny_eigenvectors.rds
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_distance \
+		--phylogeny \
+		--random_seed 34264755 \
+		--n_threads 20
 
 # ---- Training on data subsets ------------------------------------------------------------------------------------
 # As above, output format is "dataset/response_var/feature_set/*"
@@ -255,7 +279,7 @@ train:	train_feature_subsets \
 
 # Fitted models should never be deleted (even when produced as an intermediate file
 # for another step):
-.PRECIOUS: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
+.PRECIOUS: $(FEATURE_MODELS) $(PHYLO_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
 
 
 # ---- Train an ensemble model ---------------------------------------------------------------------
@@ -306,9 +330,14 @@ output/plots/phylogeny_congruence.pdf:	data/internal/timetree_amniota.nwk \
 
 # Accuracy
 # - Main figure
-output/plots/accuracy.pdf:	$(FEATURE_MODELS) $(L1_L2_MODELS) \
+output/plots/accuracy.pdf:	$(FEATURE_MODELS) \
 							output/all_data/infection/ensemble/predictions.rds
-	Rscript scripts/plotting/plot_accuracy.R
+	Rscript scripts/plotting/plot_accuracy.R infection $@
+
+# - Supplement (shedding models)
+output/plots/accuracy_shedding.pdf:	$(FEATURE_MODELS) \
+									output/all_data/shedding/ensemble/predictions.rds
+	Rscript scripts/plotting/plot_accuracy.R shedding $@
 
 # - Data quality (evidence level)
 output/plots/accuracy_data_subsets.pdf: $(L1_L2_MODELS) $(L3_MODELS)
@@ -353,19 +382,20 @@ output/plots/existing_predictions.pdf:	data/internal/timetree_amniota.nwk \
 output/plots/intermediates/taxonomy_table.rds: output/all_data/infection/all_features/holdout_predictions.rds
 	Rscript scripts/plotting/get_taxonomy.R
 
-# - Prediction overview
-
-
+# - Prediction overview (phylogeny)
 output/plots/holdout_predictions.png: output/all_data/infection/all_features/holdout_predictions.rds \
 										output/plots/intermediates/taxonomy_table.rds
 	Rscript scripts/plotting/plot_holdout_predictions.R
 
 # - Maps
-output/plots/prediction_maps.png: data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
+output/plots/prediction_maps.png:	output/all_data/infection/ensemble/holdout_predictions.rds \
+									output/all_data/infection/phylogeny/holdout_predictions.rds \
+									data/internal/timetree_mammalia.nwk \
+									data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
+									data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
 									data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
 									data/iucn_range_maps/MAMMALS_MARINE_AND_TERRESTRIAL.shp \
-									output/all_data/infection/all_features/holdout_predictions.rds \
-									output/plots/intermediates/taxonomy_table.rds
+									output/all_data/infection/all_features/holdout_predictions.rds
 	Rscript scripts/plotting/plot_holdout_maps.R
 
 

@@ -50,6 +50,10 @@ data_group$add_argument("--evidence_max", type = "integer", choices = 1L:4L, def
 
 
 other_opts_group <- parser$add_argument_group("Other options")
+other_opts_group$add_argument("--s_binding_only", action = "store_const", const = TRUE, default = FALSE,
+                              help = paste("restrict site-specific features (those starting with '--aa_...')",
+                                           "to known S-binding sites only"))
+
 other_opts_group$add_argument("--random_seed", type = "integer", default = trunc(runif(1, max = 1e5)),
                               help = "random seed to use (default: a random integer between 0 and 1e5)")
 
@@ -64,14 +68,19 @@ if (!any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$aa_properties, INPUT$dis
          INPUT$distance_to_positive, INPUT$binding_affinity, INPUT$phylogeny))
   stop("No features selected. Run train_models.R --help for available feature sets")
 
+# Restricted sites - only valid for site-specific features
+if (INPUT$s_binding_only & !any(INPUT$aa_categorical, INPUT$aa_distance, INPUT$aa_properties))
+  stop("Option --s_binding_only only works in combination with site-specific features")
 
-# Response variable:
+
+## Response variable:
 metadata_path <- sprintf("data/calculated/cleaned_%s_data.rds", INPUT$response_var)
 response <- switch(INPUT$response_var,
                    "infection" = "infected",
                    "shedding" = "shedding")
 
-# Features
+
+## Features
 feature_prefixes <- c()
 
 if (INPUT$aa_categorical)
@@ -168,6 +177,18 @@ if (!(INPUT$evidence_min == 1 & INPUT$evidence_max == 4)) {
     select(-.data$evidence_true, -.data$evidence_false, -.data$new_response)
 }
 
+# Optional filtering to S-binding sites
+if (INPUT$s_binding_only) {
+  s_binding_sites <- read_rds("data/calculated/s_binding_alignment_positions.rds")
+  
+  s_binding_regex <- sapply(c("variable_site_", "dist_variable_site_", "property_[[:alpha:]]+_"),
+                            function(x) paste0(x, s_binding_sites),
+                            simplify = FALSE, USE.NAMES = FALSE) %>% 
+    unlist() %>% 
+    paste(collapse = "|")
+} else {
+  s_binding_regex <- ""
+}
 
 # Feature data
 pairwise_dist_data <- read_rds("data/calculated/features_pairwise_dists.rds")
@@ -214,6 +235,12 @@ preprocessing_recipe <-
   preprocessing_recipe %>% 
   step_rm(-has_role("ID"), -all_outcomes(), -starts_with(feature_prefixes))
 
+if (INPUT$s_binding_only) {
+  preprocessing_recipe <-
+    preprocessing_recipe %>% 
+    step_select(has_role("ID"), all_outcomes(), matches(s_binding_regex))
+}
+
 
 # Convert character values and remove invariant columns:
 preprocessing_recipe <-
@@ -225,7 +252,7 @@ preprocessing_recipe <-
 
 
 # Objects/settings needed to evaluate this recipe in parallel:
-recipe_opts <- furrr_options(globals = c(recipe_globals, "feature_prefixes"),
+recipe_opts <- furrr_options(globals = c(recipe_globals, "feature_prefixes", "s_binding_regex"),
                              packages = c("dplyr", "tidyr", "themis", "tune", "yardstick", "rsample"),
                              seed = TRUE)
 
