@@ -406,10 +406,17 @@ output/plots/prediction_maps.png:	output/all_data/infection/ensemble/holdout_pre
 									data/internal/timetree_mammalia.nwk \
 									data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
 									data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
-									data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
-									data/iucn_range_maps/MAMMALS_MARINE_AND_TERRESTRIAL.shp \
-									output/all_data/infection/all_features/holdout_predictions.rds
+									data/iucn_range_maps/MAMMALS_FRESHWATER.shp 
+									output/all_data/infection/all_features/holdout_predictions.rds \
+									data/calculated/taxonomy.rds
 	Rscript scripts/plotting/plot_holdout_maps.R
+
+output/plots/ace2_availability_map_supplement.pdf:	output/all_data/infection/ensemble/holdout_predictions.rds \
+													data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
+													data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
+													data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
+													data/calculated/taxonomy.rds
+	Rscript scripts/plotting/plot_ace2_availability_map_supplement.R
 
 
 

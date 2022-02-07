@@ -1,49 +1,53 @@
 # Plot range maps for terrestrial wildlife predictions
 
 suppressPackageStartupMessages({
+  library(ape)
   library(sf)
   library(raster)
+  library(fasterize)
   library(dplyr)
   library(tibble)
+  library(readr)
   library(tidyr)
   library(stringr)
-  library(taxize)
   library(ggplot2)
   library(scales)
+  library(colorspace)
   library(cowplot)
   library(parallel)
+  
+  source("scripts/utils/plot_utils.R")
+  source("scripts/plotting/plotting_constants.R")
 })
 
-source("scripts/utils/plot_utils.R")
+RESOLUTION <- 1/6
 
 
 # ---- Data ----------------------------------------------------------------------------------------
-holdout_metadata <- read_csv("data/internal/NCBI_ACE2_orthologs.csv")
+ensemble_predictions <- read_rds("output/all_data/infection/ensemble/holdout_predictions.rds")
+phylogeny_predictions <- read_rds("output/all_data/infection/phylogeny/holdout_predictions.rds")
+
+infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
+taxonomy <- read_rds("data/calculated/taxonomy.rds")
+
+mammal_tree <- read.tree("data/internal/timetree_mammalia.nwk")
+bird_tree <- read.tree("data/internal/timetree_aves.nwk")
 
 continent_outlines <- st_read("data/external/iucn_base/", "Land_Masses_and_Ocean_Islands")
 iucn_range_terrestrial <- st_read("data/iucn_range_maps/", "MAMMALS_TERRESTRIAL_ONLY")
 iucn_range_freshwater <- st_read("data/iucn_range_maps/", "MAMMALS_FRESHWATER") # Semi-aquatic
-iucn_range_marineter <- st_read("data/iucn_range_maps/", "MAMMALS_MARINE_AND_TERRESTRIAL") # Semi-aquatic (marine)
+#iucn_range_marineter <- st_read("data/iucn_range_maps/", "MAMMALS_MARINE_AND_TERRESTRIAL") # Semi-aquatic (marine)
 
-iucn_ranges <- rbind(iucn_range_terrestrial, iucn_range_freshwater, iucn_range_marineter)
+iucn_ranges <- rbind(iucn_range_terrestrial, iucn_range_freshwater)#, iucn_range_marineter)
 
 
 # ---- Fix taxonomy --------------------------------------------------------------------------------
-taxonomy_table <- classification(unique(holdout_metadata$`Scientific name`), db = "ncbi") 
-
-taxonomy_table <- taxonomy_table %>% 
-  lapply(data.frame) %>% 
-  bind_rows(.id = "lookup_species") %>% 
-  select(-.data$id) %>% 
-  filter(!.data$rank %in% c("no rank", "clade")) %>% 
-  pivot_wider(names_from = .data$rank, values_from = .data$name)
-
 # Only plotting land-based, wild mammals:
 domestic_species <- c("Bos taurus", "Felis catus", "Equus caballus", "Cavia porcellus",
                       "Cricetulus griseus", "Ovis aries", "Capra hircus", "Bubalus bubalis",
                       "Vicugna pacos", "Equus przewalskii", "Camelus bactrianus",
                       "Equus asinus", "Bos indicus", "Bos indicus x Bos taurus",
-                      "Camelus dromedarius")
+                      "Camelus dromedarius", "Canis familiaris")
 marine_species <- c("Orcinus orca", "Tursiops truncatus", 
                     "Physeter catodon", "Balaenoptera acutorostrata",
                     "Delphinapterus leucas", "Lagenorhynchus obliquidens", "Monodon monoceros",
@@ -51,91 +55,296 @@ marine_species <- c("Orcinus orca", "Tursiops truncatus",
 semimarine_species <- c("Odobenus rosmarus", "Leptonychotes weddellii", "Ursus maritimus", 
                         "Neomonachus schauinslandi", "Enhydra lutris", "Callorhinus ursinus",
                         "Zalophus californianus", "Eumetopias jubatus", "Mirounga leonina",
-                        "Halichoerus grypus") # These not currently excluded (seals, etc.)
+                        "Halichoerus grypus")
 
-taxonomy_table <- taxonomy_table %>% 
-  filter(class == "Mammalia") %>% 
-  filter(species != "Homo sapiens") %>% 
-  filter(!species %in% domestic_species) %>% 
-  filter(!species %in% marine_species)
+mammals <- mammal_tree$tip.label %>% 
+  str_replace("_", " ")
 
-# Fix known issues / synonyms:
-# - Based on homotypic synonyms listed in NCBI taxonomy
-taxonomy_table <- taxonomy_table %>% 
-  mutate(species = case_when(species == "Tupaia chinensis" ~ "Tupaia belangeri",
-                             species == "Nannospalax galili" ~ "Nannospalax ehrenbergi",
-                             species == "Grammomys surdaster" ~ "Grammomys dolichurus",
-                             TRUE ~ species))
-
-missing_spp <- taxonomy_table$species[!taxonomy_table$species %in% iucn_ranges$binomial]
-stopifnot(length(missing_spp) == 0)
+plot_species <- data.frame(species = c(ensemble_predictions$species, 
+                                       phylogeny_predictions$species)) %>% 
+  distinct() %>% 
+  filter(.data$species %in% mammals) %>% 
+  filter(.data$species != "Homo sapiens") %>% 
+  filter(!.data$species %in% domestic_species) %>% 
+  filter(!.data$species %in% marine_species) %>% 
+  filter(!.data$species %in% semimarine_species) %>% 
+  pull(.data$species)
 
 
-# ---- Species with ACE2 sequences available -------------------------------------------------------
-all_holdout_ranges <- iucn_ranges %>% 
-  filter(binomial %in% taxonomy_table$species)
+missing_spp <- plot_species[!plot_species %in% iucn_ranges$binomial]
 
-blank_raster <- raster(resolution = 0.5, crs = st_crs(iucn_ranges))  
-all_holdout_raster <- rasterize(all_holdout_ranges, blank_raster, 
-                                field = "binomial", fun = n_distinct)
+if(length(missing_spp) == 0)
+  warning("Some species do not have range data: ", paste(missing_spp, collapse = ", "))
 
-all_holdout_rasterdf <- as.data.frame(all_holdout_raster, xy = TRUE)
+ensemble_predictions <- ensemble_predictions %>% 
+  filter(.data$species %in% plot_species)
 
-ggplot() +
-  geom_sf(aes(fill = 0), size = 0.05, data = continent_outlines) +  # No data in raster means 0 (when on land)
-  geom_raster(aes(x = x, y = y, fill = layer), data = all_holdout_rasterdf) +
-  scale_fill_viridis_c(breaks = breaks_pretty(), limits = c(0, NA),
-                       direction = 1, na.value = NA) +
+phylogeny_predictions <- phylogeny_predictions %>% 
+  filter(.data$species %in% plot_species)
+
+
+# ---- Base plot -----------------------------------------------------------------------------------
+blank_raster <- raster(resolution = RESOLUTION, crs = st_crs(iucn_ranges))  
+
+# Basic plot settings always the same:
+base_plot <- ggplot() +
+  scale_x_continuous(breaks = seq(-180, 180, by = 20)) +
   scale_y_continuous(limits = c(-62.5, 90),
                      breaks = seq(-60, 80, by = 20)) +
-  coord_sf(expand = FALSE) +
-  labs(x = NULL, y = NULL, fill = "Number\nof species") +
-  theme_bw()
+  labs(x = NULL, y = NULL)
+
+# When counting, no data in raster means 0 (when on land)
+base_plot_counts <- base_plot +
+  geom_sf(aes(fill = 0), size = 0.05, data = continent_outlines) +
+  coord_sf(expand = FALSE)
+
+# When calculating frequencies, all range data are retained in the denominator, so
+# areas with no species are missing data
+base_plot_freq <- base_plot +
+  geom_sf(fill = "white", size = 0.05, data = continent_outlines) +
+  coord_sf(expand = FALSE)
 
 
-# ---- Predicted hosts -----------------------------------------------------------------------------
-
-# TODO: left join predictions to iucn_ranges, then filter?
-
-
-# ---- Predictions by host order -------------------------------------------------------------------
-rasterize_by_order <- function(tax_order, 
-                               all_ranges = all_holdout_ranges, 
-                               target_raster = blank_raster) {
-  order_ranges <- all_ranges %>% 
-    filter(.data$order_ == str_to_upper(tax_order))
+# ---- Total susceptible -----------------------------------------------------------------------------
+get_predicted_raster <- function(predictions, base_raster = blank_raster, range_data = iucn_ranges) {
+  # Get a raster counting the number of species predicted as susceptible in each cell
+  susceptible_ranges <- range_data %>% 
+    filter(.data$binomial %in% predictions$species[predictions$predicted_label == "True"])
   
-  filled_raster <- rasterize(order_ranges, target_raster, 
-                             field = "binomial", fun = n_distinct)
-  
-  as.data.frame(filled_raster, xy = TRUE) %>% 
-    mutate(order = tax_order)
+  fasterize(susceptible_ranges, base_raster, fun = "sum")
 }
 
-MIN_SIZE <- 5
+plot_count_raster <- function(raster_obj, label = "Susceptible\nspecies", base = base_plot_counts, 
+                              guide = TRUE, limits = NULL) {
+  rasterdf <- as.data.frame(raster_obj, xy = TRUE)
+  
+  p <- base +  
+    geom_raster(aes(x = x, y = y, fill = layer), data = rasterdf) +
+    scale_fill_viridis_c(breaks = breaks_pretty(), direction = 1, na.value = NA, limits = limits) +
+    labs(fill = label)
+  
+  if (!guide) {
+    p <- p + guides(fill = "none")
+  }
+  
+  p
+}
 
-ranges_by_order <- all_holdout_ranges %>% 
-  st_drop_geometry() %>% 
-  group_by(.data$order_) %>% 
-  summarise(n = n_distinct(.data$binomial), 
-            .groups = "drop") %>% 
-  filter(.data$n > MIN_SIZE) %>% 
-  pull(.data$order_) %>% 
-  mclapply(rasterize_by_order, mc.cores = 16) %>% 
-  bind_rows() %>% 
-  mutate(order = str_to_sentence(.data$order))
+susceptible_raster_ensemble <- get_predicted_raster(ensemble_predictions)
+susceptible_raster_phylogeny <- get_predicted_raster(phylogeny_predictions)
+
+p_count_ensemble <- plot_count_raster(susceptible_raster_ensemble)
+
+p_count_phylogeny <- plot_count_raster(susceptible_raster_phylogeny)
 
 
-# TODO: filter predicted hosts only
+# ---- Observed / expected -------------------------------------------------------------------------
+get_obs_exp_raster <- function(predictions, susceptible_raster, susceptible_frequency,
+                             base_raster = blank_raster, range_data = iucn_ranges, guide = TRUE) {
+  # Expected
+  expected_ranges <- range_data %>% 
+    filter(.data$binomial %in% predictions$species)
+  
+  species_count <- fasterize(expected_ranges, base_raster, fun = "sum") # Number of species available in each raster cell
+  expected_frequency <- species_count * susceptible_frequency
+  
+  # Observed
+  observed_frequency <- susceptible_raster / species_count
+  
+  # Proportion
+  observed_frequency / expected_frequency
+}
 
-ggplot() +
-  geom_sf(aes(fill = 0), size = 0.05, data = continent_outlines) +  # No data in raster means 0 (when on land)
-  geom_raster(aes(x = x, y = y, fill = layer), data = ranges_by_order) +
-  facet_wrap(vars(order)) +
-  scale_fill_viridis_c(breaks = breaks_pretty(), limits = c(0, NA),
-                       direction = 1, na.value = NA) +
-  scale_y_continuous(limits = c(-62.5, 90),
-                     breaks = seq(-60, 80, by = 20)) +
-  coord_sf(expand = FALSE) +
-  labs(x = NULL, y = NULL, fill = "Number\nof species") +
-  theme_bw()
+plot_oe_raster <- function(raster_obj, label = "Observed/\nexpected", base = base_plot_freq, 
+                              guide = TRUE, limits = NULL) {
+  rasterdf <- as.data.frame(raster_obj, xy = TRUE)
+  
+  p <- base +  
+    geom_raster(aes(x = x, y = y, fill = layer), data = rasterdf) +
+    scale_fill_continuous_diverging(breaks = breaks_pretty(), na.value = NA, limits = limits,
+                                    mid = 1) +
+    labs(fill = label)
+  
+  if (!guide) {
+    p <- p + guides(fill = "none")
+  }
+  
+  p
+}
+
+# Expected frequency: based on observations among mammals
+mammal_data <- infection_data %>% 
+  rename(internal_name = .data$species) %>% 
+  left_join(taxonomy, by = "internal_name") %>% 
+  filter(.data$class == "Mammalia")
+
+base_frequency <- sum(mammal_data$infected == "True")/nrow(mammal_data)
+
+oe_ensemble <- get_obs_exp_raster(ensemble_predictions, susceptible_raster_ensemble, 
+                                  susceptible_frequency = base_frequency)
+
+oe_phylogeny <- get_obs_exp_raster(phylogeny_predictions, susceptible_raster_phylogeny,
+                                   susceptible_frequency = base_frequency)
+
+
+# Plot - using same legend scale for both
+shared_min_oe <- min(c(oe_ensemble@data@values,
+                       oe_phylogeny@data@values),
+                     na.rm = TRUE)
+
+shared_max_oe <- max(c(oe_ensemble@data@values,
+                       oe_phylogeny@data@values),
+                     na.rm = TRUE)
+
+p_obs_ensemble <- plot_oe_raster(oe_ensemble, 
+                                 limits = c(shared_min_oe, shared_max_oe))
+
+p_obs_phylogeny <- plot_oe_raster(oe_phylogeny, 
+                                  limits = c(shared_min_oe, shared_max_oe))
+
+
+# ---- Output --------------------------------------------------------------------------------------
+top_row <- plot_grid(p_count_ensemble, p_count_phylogeny,
+                     ncol = 2, rel_widths = c(1, 1),
+                     labels = c("A", "B"))
+
+bottom_row <- plot_grid(p_obs_ensemble, p_obs_phylogeny,
+                        ncol = 2, rel_widths = c(1, 1),
+                        labels = c("C", "D"))
+
+
+
+combined_plot <- plot_grid(top_row, bottom_row,
+                           nrow = 2)
+
+ggsave2("output/plots/prediction_maps.png", combined_plot,
+        width = 7, height = 3.2)
+
+
+# ---- Values in text ------------------------------------------------------------------------------
+birds <- bird_tree$tip.label %>% 
+  str_replace("_", " ")
+
+# Observed data
+bird_data <- infection_data %>% 
+  rename(internal_name = .data$species) %>% 
+  left_join(taxonomy, by = "internal_name") %>% 
+  filter(.data$class == "Aves")
+
+cat(sprintf("\n%3.3f%% of mammals amd %3.3f%% of birds in current data are susceptible (N =%3i, %3i)\n", 
+            sum(mammal_data$infected == "True") / nrow(mammal_data) * 100,
+            sum(bird_data$infected == "True") / nrow(bird_data) * 100,
+            nrow(mammal_data),
+            nrow(bird_data)))
+
+# Predictions
+ensemble_predictions <- read_rds("output/all_data/infection/ensemble/holdout_predictions.rds")
+phylogeny_predictions <- read_rds("output/all_data/infection/phylogeny/holdout_predictions.rds")
+
+get_stats <- function(predictions, class_label) {
+  pred_positive <- sum(predictions$predicted_label == "True" & predictions$class == class_label)
+  n <- sum(predictions$class == class_label)
+  
+  list(
+    freq = pred_positive/n,
+    n = n
+  )
+}
+
+ensemble <- ensemble_predictions %>% 
+  rename(internal_name = .data$species) %>% 
+  left_join(taxonomy, by = "internal_name") %>% 
+  filter(.data$class %in% c("Mammalia", "Aves"))
+
+phylo <- phylogeny_predictions %>% 
+  filter(.data$species %in% c(mammals, birds)) %>% 
+  mutate(class = if_else(.data$species %in% mammals, "Mammalia", "Aves"))
+
+
+ensemble_mammal <- get_stats(ensemble, "Mammalia")
+ensemble_bird <- get_stats(ensemble, "Aves")
+
+cat(sprintf("Ensemble model predicts %3.3f%% of mammals and %3.3f%% of birds to be susceptible (N = %3i, %3i)\n",
+            ensemble_mammal$freq * 100, 
+            ensemble_bird$freq * 100,
+            ensemble_mammal$n,
+            ensemble_bird$n))
+
+phylo_mammal <- get_stats(phylo, "Mammalia")
+phylo_bird <- get_stats(phylo, "Aves")
+
+cat(sprintf("Phylogeny model predicts %3.3f%% of mammals and %3.3f%% of birds to be susceptible (N = %3i, %3i)\n",
+            phylo_mammal$freq * 100, 
+            phylo_bird$freq * 100,
+            phylo_mammal$n,
+            phylo_bird$n))
+
+
+# ---- Susceptible species in hotspots -------------------------------------------------------------
+get_species_max <- function(species, ranges, raster) {
+  # Find the maximum value in 'raster' within a given species' range
+  sp_range <- ranges %>% 
+    filter(.data$binomial == species)
+  
+  sp_raster <- mask(raster, sp_range)
+  
+  maxValue(sp_raster)
+}
+
+find_hotspot_species <- function(oe_raster, predictions, cutoff, all_ranges = iucn_ranges) {
+  valid_ranges <- all_ranges %>% 
+    filter(.data$binomial %in% predictions$species)
+  
+  all_species <- unique(valid_ranges$binomial)
+  
+  range_max <- mclapply(all_species, get_species_max,
+                        ranges = valid_ranges,
+                        raster = oe_raster,
+                        mc.cores = 8)
+  
+  range_max <- unlist(range_max)
+  
+  all_species[range_max > cutoff]
+}
+
+hotspot_spp_ensemble <- find_hotspot_species(oe_ensemble, ensemble_predictions, cutoff = 1.1)
+hotspot_spp_phylogeny <- find_hotspot_species(oe_phylogeny, phylogeny_predictions, cutoff = 1.1)
+
+hotspot_susceptibles_ensemble <- ensemble_predictions %>% 
+  filter(.data$predicted_label == "True") %>% 
+  filter(.data$species %in% hotspot_spp_ensemble) %>% 
+  pull(.data$species) %>% 
+  sort()
+
+hotspot_susceptibles_phylogeny <- phylogeny_predictions %>% 
+  filter(.data$predicted_label == "True") %>% 
+  filter(.data$species %in% hotspot_spp_phylogeny) %>% 
+  pull(.data$species) %>% 
+  sort()
+
+# Plot these (for internal use)
+plot_ranges <- function(all_species, susceptibles, 
+                        all_ranges = iucn_ranges, base_plot = base_plot_freq) {
+  for (spp in all_species) {
+    rnge <- all_ranges %>% 
+      filter(.data$binomial == spp)
+    
+    label <- if_else(spp %in% susceptibles,
+                     paste(spp, "(susceptible)"),
+                     paste(spp, "(not susceptible)"))
+    
+    p <- base_plot + 
+      geom_sf(colour = "red",data = rnge) + 
+      ggtitle(label)
+    
+    print(p)
+  }
+}
+
+pdf("output/plots/hotspot_species_ensemble.pdf")
+  plot_ranges(hotspot_spp_ensemble, hotspot_susceptibles_ensemble)
+dev.off()
+
+pdf("output/plots/hotspot_species_ensemble.pdf")
+  plot_ranges(hotspot_spp_phylogeny, hotspot_susceptibles_phylogeny)
+dev.off()
