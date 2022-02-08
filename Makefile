@@ -195,8 +195,8 @@ output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
 
 # ---- Training: variations on best model ---------------------------------------------------------
 # Best ACE2 model restricted to S-binding sites only:
-output/all_data/%/aa_distance_s_binding/predictions.rds: $(TRAINING_REQUIREMENTS) \
-														 data/calculated/s_binding_alignment_positions.rds
+output/all_data/%/_supplementary_runs/aa_distance_s_binding/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+																				data/calculated/s_binding_alignment_positions.rds
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_distance \
 		--s_binding_only \
@@ -343,6 +343,11 @@ output/plots/accuracy.pdf:	$(FEATURE_MODELS) \
 							output/all_data/infection/ensemble/predictions.rds
 	Rscript scripts/plotting/plot_accuracy.R infection $@
 
+# - Supplement (S-binding only)
+output/plots/accuracy_supplement_sbinding.pdf:	data/calculated/cleaned_infection_data.rds \
+												output/all_data/infection/_supplementary_runs/aa_distance_s_binding/predictions.rds
+	Rscript scripts/plotting/plot_accuracy_supplement_sbinding.R
+
 # - Supplement (shedding models)
 output/plots/accuracy_shedding.pdf:	$(FEATURE_MODELS) \
 									output/all_data/shedding/ensemble/predictions.rds
@@ -406,12 +411,12 @@ output/plots/prediction_maps.png:	output/all_data/infection/ensemble/holdout_pre
 									data/internal/timetree_mammalia.nwk \
 									data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
 									data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
-									data/iucn_range_maps/MAMMALS_FRESHWATER.shp 
+									data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
 									output/all_data/infection/all_features/holdout_predictions.rds \
 									data/calculated/taxonomy.rds
 	Rscript scripts/plotting/plot_holdout_maps.R
 
-output/plots/ace2_availability_map_supplement.pdf:	output/all_data/infection/ensemble/holdout_predictions.rds \
+output/plots/ace2_availability_map_supplement.png:	output/all_data/infection/ensemble/holdout_predictions.rds \
 													data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
 													data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
 													data/iucn_range_maps/MAMMALS_FRESHWATER.shp \

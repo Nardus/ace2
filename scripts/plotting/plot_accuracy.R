@@ -1,23 +1,42 @@
 ## Plot accuracy for infection models using different feature sets (all_data models only)
 
 suppressPackageStartupMessages({
+  library(argparse)
   library(dplyr)
   library(tidyr)
   library(readr)
   library(stringr)
   library(ggplot2)
   library(cowplot)
+  
+  source("scripts/utils/output_utils.R")
+  source("scripts/plotting/plotting_constants.R")
 })
 
-source("scripts/utils/output_utils.R")
-source("scripts/plotting/plotting_constants.R")
+parser <- ArgumentParser(description = "Plot performance of all models")
+
+parser$add_argument("response_var", type = "character", choices = c("infection", "shedding"),
+                    help = "response variable, i.e. which models to plot")
+
+parser$add_argument("output_name", type = "character",
+                    help = "location/name for output file")
+
+INPUT <- parser$parse_args()
 
 
 # ---- Read all available predictions --------------------------------------------------------------
-test_preds <- load_all_runs("all_data") %>% 
-  filter(.data$response_var == "Infection")
+if (INPUT$response_var == "infection") {
+  infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")
+  prop_true <- sum(infection_data$infected == "True") / nrow(infection_data)
+  
+} else {
+  shedding_data <- readRDS("data/calculated/cleaned_shedding_data.rds")
+  prop_true <- sum(shedding_data$shedding == "True") / nrow(shedding_data)
+}
 
-infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")
+test_preds <- load_all_runs("all_data") %>% 
+  filter(.data$response_var == str_to_sentence(INPUT$response_var))
+
 
 # ---- Plotting order / model names -----------------------------------------------------------------
 RUN_LABELS <- c("aa_categorical" = "AA categorical",
@@ -28,14 +47,18 @@ RUN_LABELS <- c("aa_categorical" = "AA categorical",
                 "binding_affinity" = "Binding affinity",
                 "phylogeny" = "Phylogenetic eigenvectors",
                 "all_features" = "All ACE2 representations\ncombined",
+                "all_features_p50" = "All ACE2 representations +\nphylogenetic eigenvectors",
+                "aa_distance_phylogeny" = "AA consensus distance + \nphylogenetic eigenvectors",
                 "ensemble" = "ACE2 / phylogeny\nensemble")
+
+phylo_runs <- c("phylogeny", "all_features_p50", "aa_distance_phylogeny")
 
 test_preds <- test_preds %>% 
   mutate(run_label = factor(.data$run_id, labels = RUN_LABELS, levels = names(RUN_LABELS)),
-         run_group = case_when(.data$run_id == "phylogeny" ~ "",
+         run_group = case_when(.data$run_id %in% phylo_runs ~ "Phylogeny",
                                .data$run_id == "ensemble" ~ " ",
                                TRUE ~ "ACE2 sequence representations"),
-         run_group = factor(.data$run_group, levels = c("ACE2 sequence representations", "", " ")))
+         run_group = factor(.data$run_group, levels = c("ACE2 sequence representations", "Phylogeny", " ")))
 
 
 # ---- Overall accuracy ----------------------------------------------------------------------------
@@ -56,7 +79,6 @@ overall_accuracies <- test_preds %>%
 # - Probability of sampling a given label and then independently assigning the correct label =
 #   (p_true * p_labeled_true) + (p_false * p_labeled_false)
 # - Calculation confirmed by simulation
-prop_true <- sum(infection_data$infected == "True") / nrow(infection_data)
 null_accuracy <- prop_true^2 + (1-prop_true)^2 
 
 # Plot
@@ -70,7 +92,8 @@ p_overall <- ggplot(overall_accuracies, aes(x = run_label, y = accuracy)) +
   facet_grid(rows = vars(run_group), scales = "free_y", space = "free_y") +
   theme(strip.background = element_blank(),
         axis.text.y = element_blank(),
-        axis.title.y = element_blank())
+        axis.title.y = element_blank(),
+        panel.spacing = unit(0.5, "lines"))
 
 
 # ---- Sensitivity/Specificity ---------------------------------------------------------------------
@@ -98,7 +121,8 @@ p_sens <- ggplot(sens, aes(x = run_label, y = accuracy, fill = label)) +
   labs(x = "Predictors used", y = "Sensitivity") +
   coord_flip() +
   facet_grid(rows = vars(run_group), scales = "free_y", space = "free_y") +
-  theme(strip.text = element_blank())
+  theme(strip.text = element_blank(),
+        panel.spacing = unit(0.5, "lines"))
 
 # Specificity
 spec <- class_accuracies %>% 
@@ -115,7 +139,8 @@ p_spec <- ggplot(spec, aes(x = run_label, y = accuracy, fill = label)) +
   facet_grid(rows = vars(run_group), scales = "free_y", space = "free_y") +
   theme(strip.text = element_blank(), 
         axis.text.y = element_blank(),
-        axis.title.y = element_blank())
+        axis.title.y = element_blank(),
+        panel.spacing = unit(0.5, "lines"))
 
 
 # ---- Output --------------------------------------------------------------------------------------
@@ -123,8 +148,8 @@ p_combined <- plot_grid(p_sens, p_spec, p_overall,
                         nrow = 1, rel_widths = c(1.6, 1, 1.05),
                         align = "h", axis = "tb")
 
-ggsave2("output/plots/accuracy.pdf", p_combined, 
-        width = 7, height = 2.2)
+ggsave2(INPUT$output_name, p_combined, 
+        width = 7, height = 3)
 
 
 # ---- Values quoted in text -----------------------------------------------------------------------
