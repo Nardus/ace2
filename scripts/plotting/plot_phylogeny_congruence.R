@@ -7,8 +7,8 @@ suppressPackageStartupMessages({
   library(stringr)
   library(ape)
   library(phytools)
-  library(phylogram)
   library(dendextend)
+  library(phylogram)  # Phylogram MUST be loaded after dendextend for as.dendrogram.phylo to work
   library(parallel)
   library(ggplot2)
   library(grid)
@@ -22,8 +22,6 @@ N_CORES <- 20
 # Phylogenies
 time_tree <- read.tree("data/internal/timetree_amniota.nwk")
 ace2_tree <- read.tree("data/calculated/gene_tree/ace_genetree.treefile")
-
-as.dendrogram(ace2_tree)
 
 # Metadata:
 ncbi_metadata <- read.csv("data/internal/NCBI_ACE2_orthologs.csv") %>% 
@@ -55,7 +53,8 @@ ace2_tree <- drop.tip(ace2_tree, "XP_027389727.1")  # Hybrid (Bos indicus x Bos 
 
 spp_map <- ace2_metadata$species %>% 
   if_else(. == "Canis lupus familiaris", "Canis familiaris", .) %>% 
-  str_extract("^[[:alpha:]]+ [[:alpha:]]+") # Drop subspecies info
+  str_extract("^[[:alpha:]]+ [[:alpha:]]+") %>% # Drop subspecies info
+  if_else(. == "Tupaia chinensis", "Tupaia belangeri", .)
 
 names(spp_map) <- ace2_metadata$ace2_accession
 
