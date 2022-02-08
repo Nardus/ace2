@@ -109,60 +109,10 @@ p_site_importance <- ggplot(site_importance, aes(x = site_label_continuous, y = 
   geom_col(colour = "grey20", size = 0.2, position = "stack") +
   coord_flip() +
   scale_x_continuous(breaks = site_importance$site_label_continuous,
-                     labels = site_importance$site_label,
-                     sec.axis = sec_axis(~ ., name = "Correlated cluster",
-                                         breaks = site_importance$site_label_continuous,
-                                         labels = site_importance$cluster_label)) +
+                     labels = site_importance$site_label) +
   scale_fill_brewer(palette = "Set2", na.value = "grey60", drop = FALSE) +
-  labs(y = "Total effect magnitude", x = "Sequence position\n(human ACE2)", fill = "Measure")
-
-
-
-# ---- Cluster overview ----------------------------------------------------------------------------
-# Need to plot these in terms of alignment coordinates, since some positions do not occur in the
-# human sequence (gaps)
-cluster_overview <- feature_locations %>% 
-  right_join(cluster_labels, by = "cluster")
-
-human_coords <- as_human_coord_v(1:max(feature_clusters$feature_position))
-location_adjustments <- 1:max(feature_clusters$feature_position)
-names(location_adjustments) <- human_coords
-
-adjusted_s_binding_sites <- S_BINDING_SITES
-adjusted_s_binding_sites$start_pos <- location_adjustments[as.character(S_BINDING_SITES$start_pos)]
-adjusted_s_binding_sites$stop_pos <- location_adjustments[as.character(S_BINDING_SITES$stop_pos)]
-
-p_cluster_overview <- ggplot(cluster_overview) +
-  geom_rect(aes(xmin = start_pos, xmax = stop_pos, ymin = -Inf, ymax = Inf), 
-            fill = "grey70", data = adjusted_s_binding_sites) +
-  geom_tile(aes(x = feature_position, y = cluster_label,  fill = s_binding)) + 
-  
-  scale_x_continuous(sec.axis = sec_axis(~ ., name = "Sequence position (human ACE2)",
-                                         breaks = site_labels$feature_position,
-                                         labels = site_labels$feature_position_corrected),
-                     expand = expansion(mult = 0.002)) +
-  scale_fill_brewer(palette = "Set1", na.value = "grey60", guide = "none") +
-  labs(x = "Alignment position", y = "Cluster")
-
-
-# Add combined importance of each cluster:
-cluster_importance <- top_importance %>% 
-  group_by(.data$cluster_label) %>% 
-  summarise(total_shap = sum(.data$importance), .groups = "drop")
-
-p_cluster_importance <- ggplot(cluster_importance, aes(x = cluster_label, y = total_shap)) +
-  geom_col(fill = "grey30") +
-  scale_y_continuous(expand = expansion(add = c(0, 0.01))) +
-  labs(y = "Total effect\nmagnitude") +
-  coord_flip() +
-  theme(axis.text.y = element_blank(),
-        axis.title.y = element_blank(),
-        axis.ticks.y = element_blank(),
-        plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = -4))
-
-p_cluster_importance <- plot_grid(p_cluster_overview, p_cluster_importance,
-                                  ncol = 2, rel_widths = c(12, 1),
-                                  align = "h", axis = "tb")
+  labs(y = "Total effect magnitude", x = "Sequence position (human ACE2)", fill = "Measure") +
+  theme(legend.position = c(0.66, 0.16))
 
 
 # ---- Phylogenetic information in these sites -----------------------------------------------------
@@ -197,20 +147,16 @@ p_entropy <- ggplot(entropy_training, aes(x = selected, y = entropy)) +
   scale_y_continuous(expand = expansion(add = c(0.1, 0.15))) +
   scale_colour_brewer(palette = "Set1", na.value = "grey60") +
   labs(x = "Position retained", 
-       y = "Phylogenetic informativeness\n(Shannon entropy)", 
+       y = "Phylogenetic informativeness (Shannon entropy)", 
        colour = "S-interaction")
 
 
 # ---- Combine--------------------------------------------------------------------------------------
-p_top <- plot_grid(p_overall_importance, p_site_importance, p_entropy,
-                   ncol = 3, rel_widths = c(1.05, 1.3, 1),
-                   labels = c("A", "B", "C"))
+p_combined <- plot_grid(p_overall_importance, p_site_importance, p_entropy,
+                        ncol = 3, rel_widths = c(1.4, 1, 1.3),
+                        labels = c("A", "B", "C"))
 
-p_combined <- plot_grid(p_top, p_cluster_importance,
-                        ncol = 1, rel_heights = c(1, 0.3),
-                        labels = c("", "D"))
-
-ggsave2(INPUT$output_name, p_combined, width = 7, height = 5)
+ggsave2(INPUT$output_name, p_combined, width = 7, height = 4.7)
 
 
 # ---- Values mentioned in text --------------------------------------------------------------------
