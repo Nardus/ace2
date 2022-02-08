@@ -182,7 +182,7 @@ if (INPUT$s_binding_only) {
   s_binding_sites <- read_rds("data/calculated/s_binding_alignment_positions.rds")
   
   s_binding_regex <- sapply(c("variable_site_", "dist_variable_site_", "property_[[:alpha:]]+_"),
-                            function(x) paste0(x, s_binding_sites),
+                            function(x) paste0(x, s_binding_sites, "$"),
                             simplify = FALSE, USE.NAMES = FALSE) %>% 
     unlist() %>% 
     paste(collapse = "|")
@@ -238,7 +238,7 @@ preprocessing_recipe <-
 if (INPUT$s_binding_only) {
   preprocessing_recipe <-
     preprocessing_recipe %>% 
-    step_select(has_role("ID"), all_outcomes(), matches(s_binding_regex))
+    step_rm(-has_role("ID"), -all_outcomes(), -matches(s_binding_regex))
 }
 
 
