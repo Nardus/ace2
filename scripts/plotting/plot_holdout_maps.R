@@ -73,7 +73,7 @@ plot_species <- data.frame(species = c(ensemble_predictions$species,
 
 missing_spp <- plot_species[!plot_species %in% iucn_ranges$binomial]
 
-if(length(missing_spp) == 0)
+if(length(missing_spp) != 0)
   warning("Some species do not have range data: ", paste(missing_spp, collapse = ", "))
 
 ensemble_predictions <- ensemble_predictions %>% 
@@ -303,6 +303,7 @@ find_hotspot_species <- function(oe_raster, predictions, cutoff, all_ranges = iu
                         mc.cores = 8)
   
   range_max <- unlist(range_max)
+  range_max <- range_max[!is.na(range_max)]  # NA's caused by very small ranges (below resolution of raster, but we only want the main species visible on the map)
   
   all_species[range_max > cutoff]
 }
@@ -313,17 +314,15 @@ hotspot_spp_phylogeny <- find_hotspot_species(oe_phylogeny, phylogeny_prediction
 hotspot_susceptibles_ensemble <- ensemble_predictions %>% 
   filter(.data$predicted_label == "True") %>% 
   filter(.data$species %in% hotspot_spp_ensemble) %>% 
-  pull(.data$species) %>% 
-  sort()
+  pull(.data$species)
 
 hotspot_susceptibles_phylogeny <- phylogeny_predictions %>% 
   filter(.data$predicted_label == "True") %>% 
   filter(.data$species %in% hotspot_spp_phylogeny) %>% 
-  pull(.data$species) %>% 
-  sort()
+  pull(.data$species)
 
 # Plot these (for internal use)
-plot_ranges <- function(all_species, susceptibles, 
+plot_ranges <- function(all_species, susceptibles, out_folder,
                         all_ranges = iucn_ranges, base_plot = base_plot_freq) {
   for (spp in all_species) {
     rnge <- all_ranges %>% 
@@ -334,17 +333,22 @@ plot_ranges <- function(all_species, susceptibles,
                      paste(spp, "(not susceptible)"))
     
     p <- base_plot + 
-      geom_sf(colour = "red",data = rnge) + 
+      geom_sf(colour = "red", data = rnge) + 
       ggtitle(label)
     
-    print(p)
+    out_name <- paste(spp, ".png") %>% 
+      paste(out_folder, ., sep = "/")
+      
+    ggsave2(out_name, p, width = 7, height = 3.2)
   }
 }
 
-pdf("output/plots/hotspot_species_ensemble.pdf")
-  plot_ranges(hotspot_spp_ensemble, hotspot_susceptibles_ensemble)
-dev.off()
+dir.create("output/plots/hotspot_species/ensemble", recursive = TRUE)
+dir.create("output/plots/hotspot_species/phylogeny")
 
-pdf("output/plots/hotspot_species_ensemble.pdf")
-  plot_ranges(hotspot_spp_phylogeny, hotspot_susceptibles_phylogeny)
-dev.off()
+plot_ranges(hotspot_spp_ensemble, hotspot_susceptibles_ensemble,
+            out_folder = "output/plots/hotspot_species/ensemble")
+
+
+plot_ranges(hotspot_spp_phylogeny, hotspot_susceptibles_phylogeny,
+            out_folder = "output/plots/hotspot_species/phylogeny")
