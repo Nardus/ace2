@@ -47,11 +47,11 @@ RUN_LABELS <- c("aa_categorical" = "AA categorical",
                 "binding_affinity" = "Binding affinity",
                 "phylogeny" = "Phylogenetic eigenvectors",
                 "all_features" = "All ACE2 representations\ncombined",
-                "all_features_p50" = "All ACE2 representations +\nphylogenetic eigenvectors",
+                "all_features_phylogeny" = "All ACE2 representations +\nphylogenetic eigenvectors",
                 "aa_distance_phylogeny" = "AA consensus distance + \nphylogenetic eigenvectors",
                 "ensemble" = "ACE2 / phylogeny\nensemble")
 
-phylo_runs <- c("phylogeny", "all_features_p50", "aa_distance_phylogeny")
+phylo_runs <- c("phylogeny", "all_features_phylogeny", "aa_distance_phylogeny")
 
 test_preds <- test_preds %>% 
   mutate(run_label = factor(.data$run_id, labels = RUN_LABELS, levels = names(RUN_LABELS)),

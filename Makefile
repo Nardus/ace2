@@ -203,7 +203,7 @@ output/all_data/%/_supplementary_runs/aa_distance_s_binding/predictions.rds:	$(T
 		--random_seed 58498184 \
 		--n_threads 20						 
 
-# Phylogeny combined with the best ACE2 model
+# Phylogeny combined with the best ACE2 models
 output/all_data/%/aa_distance_phylogeny/predictions.rds: $(TRAINING_REQUIREMENTS) \
 														 data/calculated/features_phylogeny_eigenvectors.rds
 	Rscript scripts/train_models.R $* $(@D) \
@@ -220,6 +220,13 @@ output/all_data/%/binding_affinity_phylogeny/predictions.rds:	$(TRAINING_REQUIRE
 		--random_seed 34264755 \
 		--n_threads 20
 
+output/all_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+														 			data/calculated/features_phylogeny_eigenvectors.rds
+	Rscript scripts/train_models.R $* $(@D) \
+		$(ALL_FEATURE_SETS) \
+		--phylogeny \
+		--random_seed 09524845
+
 
 # ---- Training on data subsets ------------------------------------------------------------------------------------
 # As above, output format is "dataset/response_var/feature_set/*"
@@ -232,23 +239,29 @@ output/all_data/%/binding_affinity_phylogeny/predictions.rds:	$(TRAINING_REQUIRE
 #  can't be included separately here)
 
 # - Level 2 (experimental infection)
-output/l2_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
+output/l2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+															data/calculated/features_phylogeny_eigenvectors.rds
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
+		--phylogeny \
 		--evidence_min 2 --evidence_max 2 \
 		--random_seed 23556284
 
 # - Level 3-4 (cell culture)
-output/l3+4_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
+output/l3+4_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+															data/calculated/features_phylogeny_eigenvectors.rds
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
+		--phylogeny \
 		--evidence_min 3 --evidence_max 4 \
 		--random_seed 43564215
 
 # - Level 1 and 2 (i.e. exclude cell culture, in case it makes things worse)
-output/l1+2_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
+output/l1+2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+															data/calculated/features_phylogeny_eigenvectors.rds
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
+		--phylogeny \
 		--evidence_min 1 --evidence_max 2 \
 		--random_seed 28641685
 
@@ -274,8 +287,8 @@ DATA_FOLDERS =	$(foreach a,$(DATASETS), \
 					$(foreach b,$(RESPONSE_VARS), \
 						$(a)/$(b) ))
 
-L1_L2_MODELS = $(patsubst %, output/%/all_features/predictions.rds, $(DATA_FOLDERS))
-L3_MODELS = output/l3+4_data/infection/all_features/predictions.rds
+L1_L2_MODELS = $(patsubst %, output/%/all_features_phylogeny/predictions.rds, $(DATA_FOLDERS))
+L3_MODELS = output/l3+4_data/infection/all_features_phylogeny/predictions.rds
 
 
 # Shortcuts:
@@ -340,6 +353,9 @@ output/plots/phylogeny_congruence.pdf:	data/internal/timetree_amniota.nwk \
 # Accuracy
 # - Main figure
 output/plots/accuracy.pdf:	$(FEATURE_MODELS) \
+							$(PHYLO_MODELS) \
+							output/all_data/infection/all_features_phylogeny/predictions.rds \
+							output/all_data/infection/aa_distance_phylogeny/predictions.rds \
 							output/all_data/infection/ensemble/predictions.rds
 	Rscript scripts/plotting/plot_accuracy.R infection $@
 
