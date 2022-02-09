@@ -5,13 +5,10 @@ suppressPackageStartupMessages({
   library(tibble)
   library(tidyr)
   library(stringr)
-  library(readr)
-  library(yardstick)
   library(ape)
   library(ggplot2)
   library(ggtree)
   library(ggtext)
-  library(vipor)
   library(cowplot)
   
   source("scripts/utils/timetree_constants.R")
@@ -191,7 +188,6 @@ sample_size <- binary_preds %>%
   summarise(n = n(),
             .groups = "drop")
 
-
 # Simpler study labels
 simple_label_df <- study_label_df %>% 
   mutate(citation_key = as.character(.data$citation_key),
@@ -202,11 +198,30 @@ simple_label_df <- study_label_df %>%
 simple_labels <- simple_label_df$study_label
 names(simple_labels) <- simple_label_df$citation_key
 
-# Plot
-p_samplesize <- ggplot(sample_size, aes(x = citation_key, y = n)) +
-  geom_col(colour = "grey20", fill = "grey50") +
-  scale_y_continuous(limits = c(0, 100), expand = expansion(0.02)) +
-  labs(y = "Number of species") +
+
+# ---- Overall accuracy ----------------------------------------------------------------------------
+total_accuracies <- binary_preds %>% 
+  group_by(.data$citation_key) %>% 
+  summarise(n_accurate = sum(.data$observed == .data$binary_pred),
+            n_total = n(),
+            .groups = "keep") %>% 
+  mutate(accuracy = .data$n_accurate/.data$n_total,
+         lower = binom.test(.data$n_accurate, .data$n_total)$conf.int[1],
+         upper = binom.test(.data$n_accurate, .data$n_total)$conf.int[2]) %>% 
+  ungroup()
+
+# Accuracy of a null model which assigns labels in proportion to observed proportions  (based on full dataset)
+prop_true <- sum(infection_data$infected == "True") / nrow(infection_data)
+null_accuracy <- prop_true^2 + (1-prop_true)^2 
+
+
+p_acc <- ggplot(total_accuracies, aes(x = citation_key, y = accuracy, fill = n_total)) +
+  geom_col(colour = "grey50") +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey40") + 
+  geom_hline(yintercept = null_accuracy, linetype = 2, colour = "grey20") +
+  scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
+  scale_fill_distiller(palette = "PuBu", direction = 1, guide = "none") +
+  labs(y = "Accuracy") +
   theme(axis.text.x = element_blank(),
         axis.title.x = element_blank())
 
@@ -220,18 +235,20 @@ class_accuracies <- binary_preds %>%
   mutate(accuracy = .data$n_accurate/.data$n_total,
          lower = binom.test(.data$n_accurate, .data$n_total)$conf.int[1],
          upper = binom.test(.data$n_accurate, .data$n_total)$conf.int[2]) %>% 
-  ungroup()
+  ungroup() %>% 
+  left_join(sample_size, by = "citation_key")
+
 
 # Sensitivity
 sens <- class_accuracies %>% 
   filter(.data$infected == "True")
 
-p_sens <- ggplot(sens, aes(x = citation_key, y = accuracy, fill = infected)) +
-  geom_col(colour = "grey20") +
-  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
-  geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
+p_sens <- ggplot(sens, aes(x = citation_key, y = accuracy, fill = n)) +
+  geom_col(colour = "grey50") +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey40") + 
+  geom_hline(yintercept = prop_true, linetype = 2, colour = "grey20") +
   scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
-  scale_fill_manual(values = INFECTION_STATUS_COLOURS, guide = "none") +
+  scale_fill_distiller(palette = "PuBu", direction = 1, guide = "none") +
   labs(y = "Sensitivity") +
   theme(strip.text = element_blank(), 
         axis.text.x = element_blank(),
@@ -241,13 +258,13 @@ p_sens <- ggplot(sens, aes(x = citation_key, y = accuracy, fill = infected)) +
 spec <- class_accuracies %>% 
   filter(.data$infected == "False")
 
-p_spec <- ggplot(spec, aes(x = citation_key, y = accuracy, fill = infected)) +
-  geom_col() +
-  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
-  geom_hline(yintercept = 0.5, linetype = 2, colour = "grey10") +
+p_spec <- ggplot(spec, aes(x = citation_key, y = accuracy, fill = n)) +
+  geom_col(colour = "grey50") +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey40") + 
+  geom_hline(yintercept = 1 -prop_true, linetype = 2, colour = "grey20") +
   scale_x_discrete(labels = simple_labels) +
   scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
-  scale_fill_manual(values = INFECTION_STATUS_COLOURS, guide = "none") +
+  scale_fill_distiller(palette = "PuBu", direction = 1, guide = "none") +
   labs(x = "Prediction source", y = "Specificity") +
   theme(axis.text.x = element_markdown(angle = 90, hjust = 1, vjust = 0.5))
 
@@ -274,8 +291,6 @@ cl_labels <- cl_spread %>%
 cl_plot <- ggplot(cl_spread, aes(x = sens, y = spec, colour = sample_size)) +
   
   geom_abline(linetype = 2, colour = "grey20") +
-  geom_vline(xintercept = 0.5, colour = "grey70", linetype = 2) +
-  geom_hline(yintercept = 0.5, colour = "grey70", linetype = 2) +
   
   geom_point() +
   geom_errorbar(aes(xmin = sens_lower, xmax = sens_upper), width = 0.02) +
@@ -295,7 +310,7 @@ cl_plot <- ggplot(cl_spread, aes(x = sens, y = spec, colour = sample_size)) +
 
 
 # ---- Output --------------------------------------------------------------------------------------
-p_top <- plot_grid(cl_plot, p_samplesize, p_sens, p_spec,
+p_top <- plot_grid(cl_plot, p_acc, p_sens, p_spec,
                    ncol = 1, rel_heights = c(3, 1, 1.2, 2),
                    align = "v", axis = "lr",
                    labels = c("B", "C", "", ""),
@@ -340,7 +355,7 @@ dfcor %>%
   arrange(.data$cor) %>% 
   print()
 
-cat("\n\nMaximum correlation")
+cat("\n\nMaximum correlations:\n")
 dfcor %>% 
   filter(.data$cor == .data$max_cor) %>% 
   select(-.data$min_cor, -.data$max_cor) %>% 
@@ -355,7 +370,8 @@ huang_spp <- all_predictions$species[all_predictions$citation_key == "huang2020"
 alexander_spp <- all_predictions$species[all_predictions$citation_key == "alexander2020"]
 
 cat("\nACE2-based model shares", sum(ace2_spp %in% huang_spp), "species with Huang et al. 2020\n")
-cat("Phylogeny-based model shares", sum(ace2_spp %in% alexander_spp), "species with Alexander et al. 2020\n")
+cat("Ensemble model shares", sum(ace2_spp %in% alexander_spp), "species with Alexander et al. 2020\n")
+cat("Phylogeny-based model shares", sum(phylo_spp %in% alexander_spp), "species with Alexander et al. 2020\n")
 
 
 # - Accuracy of directly compared to Huang et al.

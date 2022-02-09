@@ -439,6 +439,10 @@ output/plots/ace2_availability_map_supplement.png:	output/all_data/infection/ens
 													data/calculated/taxonomy.rds
 	Rscript scripts/plotting/plot_ace2_availability_map_supplement.R
 
+# - Prioritisation based on scores
+output/plots/phylogeny_predictions_supplement.pdf:	output/all_data/infection/phylogeny/holdout_predictions.rds \
+													data/internal/timetree_mammalia.nwk
+	Rscript scripts/plotting/plot_phylogeny_predictions_supplement.R
 
 
 .PHONY: plots
