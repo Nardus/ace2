@@ -17,6 +17,11 @@ shedding_data <- readRDS("data/calculated/cleaned_shedding_data.rds")
 shedding_raw <- read_excel("data/internal/infection_data.xlsx")
 
 # ---- Infection data ------------------------------------------------------------------------------
+# Overview
+sprintf("Infection data: %i susceptible, %i not susceptible",
+        sum(infection_data$infected == "True"),
+        sum(infection_data$infected == "False"))
+
 # Viruses
 # - Direct observations
 l1_data <- infection_data %>% 
@@ -26,6 +31,7 @@ cov1 <- grepl("SARS-CoV-1", l1_data$viruses_true, fixed = TRUE)
 cov2 <- grepl("SARS-CoV-2", l1_data$viruses_true, fixed = TRUE)
 cov_multi <- grepl(",", l1_data$viruses_true)
 
+sprintf("%i observations of natural infections", nrow(l1_data))
 sprintf("%i natural infections involve SARS-CoV-2", sum(cov2))
 sprintf("%i of these also infected by other sarbecoviruses, primarily SARS-CoV (N=%i)", 
         sum(cov2 & cov_multi),
@@ -41,6 +47,7 @@ cov2_neg <- grepl("SARS-CoV-2", l2_data$viruses_false, fixed = TRUE)
 cov_multi_pos <- grepl(",", l2_data$viruses_true)
 cov_multi_all <- cov_multi_pos | grepl(",", l2_data$viruses_false)
 
+sprintf("%i observations from experimental infections", nrow(l2_data))
 sprintf("%i positive experimental infections involve SARS-CoV-2", sum(cov2_pos))
 sprintf("%i negative experimental infections involve SARS-CoV-2", sum(cov2_neg))
 sprintf("%i of %i hosts tested for >1 virus was susceptible for >1 virus", sum(cov_multi_pos), sum(cov_multi_all))
