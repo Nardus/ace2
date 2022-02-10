@@ -128,8 +128,8 @@ plot_data_panel <- function(response_data, virus_data, label_var) {
     geom_tile() +
     geom_point(aes(x = x_pos, shape = virus), size = 0.9, colour = "grey30", virus_data) +
     
-    scale_fill_brewer(palette = "YlGnBu", direction = - 1, guide = guide_legend(order = 1)) +
-    scale_shape_manual(values = VIRUS_SHAPES, guide = guide_legend(order = 2)) +
+    scale_fill_brewer(palette = "YlGnBu", direction = - 1, guide = guide_legend(order = 1), drop = FALSE) +
+    scale_shape_manual(values = VIRUS_SHAPES, guide = guide_legend(order = 2), drop = FALSE) +
     scale_x_discrete(expand = expansion(add = 0)) +
     scale_y_discrete(expand = expansion(add = 0.5), drop = FALSE, position = "right") +
     theme(legend.position="none",
@@ -344,7 +344,7 @@ phylo_neg_plot <- plot_dists2("closest_neg_phylo", test_position = 630) +
 # - ACE2 clustering
 ace2_pos_plot <- plot_dists2("closest_pos_ace2", test_position = 14000) +
   scale_y_continuous(limits = c(0, 15500), expand = expansion(add = 800)) +
-  labs(x = "Infected", y = "ACE2 distance\nto closest infected\nneighbour (My)") + 
+  labs(x = "Infected", y = "ACE2 distance\nto closest infected\nneighbour") + 
   theme(legend.position = "none",
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
@@ -352,7 +352,7 @@ ace2_pos_plot <- plot_dists2("closest_pos_ace2", test_position = 14000) +
 
 ace2_neg_plot <- plot_dists2("closest_neg_ace2", test_position = 14000) +
   scale_y_continuous(limits = c(0, 15500), expand = expansion(add = 800)) +
-  labs(x = "Infected", y = "ACE2 distance\nto closest non-infected\nneighbour (My)", 
+  labs(x = "Infected", y = "ACE2 distance\nto closest non-infected\nneighbour", 
        fill = "Best evidence") + 
   theme(legend.position = "none",
         plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
