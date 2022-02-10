@@ -19,7 +19,7 @@ datasets <- c("all_data", "l2_data", "l1+2_data")
 test_preds <- lapply(datasets, load_all_runs) %>% 
   bind_rows() %>% 
   filter(.data$response_var == "Infection") %>% 
-  filter(.data$run_id == "all_features")
+  filter(.data$run_id == "all_features_phylogeny")
 
 
 infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")

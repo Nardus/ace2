@@ -369,9 +369,19 @@ output/plots/accuracy_shedding.pdf:	$(FEATURE_MODELS) \
 									output/all_data/shedding/ensemble/predictions.rds
 	Rscript scripts/plotting/plot_accuracy.R shedding $@
 
-# - Data quality (evidence level)
+# - Supplement (data quality  / evidence level)
 output/plots/accuracy_data_subsets.pdf: $(L1_L2_MODELS) $(L3_MODELS)
 	Rscript scripts/plotting/plot_accuracy_data_subsets.R
+
+# - Supplement (non-ACE2 sarbecoviruses)
+output/plots/accuracy_non_ace2_all_features.pdf:	output/all_data/infection/all_features/predictions.rds \
+													data/calculated/cleaned_infection_data.rds
+	Rscript scripts/plotting/plot_accuracy_supplement_non_ace2.R $< $@
+	
+
+output/plots/accuracy_non_ace2_phylogeny.pdf:	output/all_data/infection/phylogeny/predictions.rds \
+												data/calculated/cleaned_infection_data.rds
+	Rscript scripts/plotting/plot_accuracy_supplement_non_ace2.R $< $@
 
 
 # Variable importance
