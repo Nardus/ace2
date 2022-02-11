@@ -22,6 +22,14 @@ sprintf("Infection data: %i susceptible, %i not susceptible",
         sum(infection_data$infected == "True"),
         sum(infection_data$infected == "False"))
 
+n_true <- sum(infection_data$infected == "True")
+
+sprintf("%0.2f%% susceptible, (CI: %0.2f - %0.2f)",
+        n_true / nrow(infection_data) * 100,
+        binom.test(n_true, nrow(infection_data))$conf.int[1] * 100,
+        binom.test(n_true, nrow(infection_data))$conf.int[2] * 100)
+
+
 # Viruses
 # - Direct observations
 l1_data <- infection_data %>% 
@@ -65,6 +73,8 @@ infection_data %>%
   mutate(Proportion = .data$Positive/.data$N,
          CI_lower = binom.test(.data$Positive, .data$N)$conf.int[1],
          CI_upper = binom.test(.data$Positive, .data$N)$conf.int[2]) %>% 
+  ungroup() %>%
+  select(-.data$evidence_level) %>% 
   print()
 
 
