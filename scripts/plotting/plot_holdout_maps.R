@@ -140,13 +140,15 @@ p_count_phylogeny <- plot_count_raster(susceptible_raster_phylogeny)
 
 # ---- Observed / expected -------------------------------------------------------------------------
 get_obs_exp_raster <- function(predictions, susceptible_raster, susceptible_frequency,
-                             base_raster = blank_raster, range_data = iucn_ranges, guide = TRUE) {
+                             base_raster = blank_raster, range_data = iucn_ranges) {
   # Expected
   expected_ranges <- range_data %>% 
     filter(.data$binomial %in% predictions$species)
   
   species_count <- fasterize(expected_ranges, base_raster, fun = "sum") # Number of species available in each raster cell
-  expected_frequency <- species_count * susceptible_frequency
+  
+  species_present <- fasterize(expected_ranges, base_raster, fun = "any") # 1 if at least one species with data present in a given raster cell
+  expected_frequency <- species_present * susceptible_frequency
   
   # Observed
   observed_frequency <- susceptible_raster / species_count
@@ -303,7 +305,7 @@ find_hotspot_species <- function(oe_raster, predictions, cutoff, all_ranges = iu
                         mc.cores = 8)
   
   range_max <- unlist(range_max)
-  range_max <- range_max[!is.na(range_max)]  # NA's caused by very small ranges (below resolution of raster, but we only want the main species visible on the map)
+  range_max[is.na(range_max)] <- -999  # NA's caused by very small ranges (below resolution of raster, but we only want the main species visible on the map)
   
   all_species[range_max > cutoff]
 }
