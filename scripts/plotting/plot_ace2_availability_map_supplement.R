@@ -23,7 +23,7 @@ RESOLUTION <- 1/6
 
 
 # ---- Data ----------------------------------------------------------------------------------------
-ensemble_predictions <- read_rds("output/all_data/infection/ensemble/holdout_predictions.rds")
+ensemble_predictions <- read_rds("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
 
 taxonomy <- read_rds("data/calculated/taxonomy.rds")
 
@@ -65,7 +65,7 @@ plot_species <- data.frame(species = ensemble_predictions$species) %>%
 
 missing_spp <- plot_species[!plot_species %in% iucn_ranges$binomial]
 
-if(length(missing_spp) == 0)
+if(length(missing_spp) != 0)
   warning("Some species do not have range data: ", paste(missing_spp, collapse = ", "))
 
 

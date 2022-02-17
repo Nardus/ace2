@@ -24,7 +24,7 @@ RESOLUTION <- 1/6
 
 
 # ---- Data ----------------------------------------------------------------------------------------
-ensemble_predictions <- read_rds("output/all_data/infection/ensemble/holdout_predictions.rds")
+ensemble_predictions <- read_rds("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
 phylogeny_predictions <- read_rds("output/all_data/infection/phylogeny/holdout_predictions.rds")
 
 infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
@@ -240,7 +240,7 @@ cat(sprintf("\n%3.3f%% of mammals amd %3.3f%% of birds in current data are susce
             nrow(bird_data)))
 
 # Predictions
-ensemble_predictions <- read_rds("output/all_data/infection/ensemble/holdout_predictions.rds")
+ensemble_predictions <- read_rds("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
 phylogeny_predictions <- read_rds("output/all_data/infection/phylogeny/holdout_predictions.rds")
 
 get_stats <- function(predictions, class_label) {

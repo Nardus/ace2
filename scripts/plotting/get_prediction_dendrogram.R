@@ -20,7 +20,7 @@ taxonomy <- readRDS("data/calculated/taxonomy.rds")
 
 ace2_cv_preds <- readRDS("output/all_data/infection/all_features/predictions.rds")
 phylo_cv_preds <- readRDS("output/all_data/infection/phylogeny/predictions.rds")
-ensemble_cv_preds <- readRDS("output/all_data/infection/ensemble/predictions.rds")
+ensemble_cv_preds <- readRDS("output/all_data/infection/ensemble_all_features_phylogeny/predictions.rds")
 
 ace2_holdout_preds <- readRDS("output/all_data/infection/all_features/holdout_predictions.rds") %>% 
   filter(.data$prediction_type != "Fitted value")
@@ -28,7 +28,7 @@ ace2_holdout_preds <- readRDS("output/all_data/infection/all_features/holdout_pr
 phylo_holdout_preds <- readRDS("output/all_data/infection/phylogeny/holdout_predictions.rds") %>% 
   filter(.data$prediction_type != "Fitted value")
 
-ensemble_holdout_preds <- readRDS("output/all_data/infection/ensemble/holdout_predictions.rds") %>% 
+ensemble_holdout_preds <- readRDS("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds") %>% 
   filter(.data$prediction_type != "Fitted value")
 
 

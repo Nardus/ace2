@@ -129,4 +129,4 @@ ensemble_predictions <- ensemble_predictions %>%
 # ---- Output ---------------------------------------------------------------------------
 saveRDS(ace2_predictions, "output/all_data/infection/all_features/holdout_predictions.rds")
 saveRDS(phylo_predictions, "output/all_data/infection/phylogeny/holdout_predictions.rds")
-saveRDS(ensemble_predictions, "output/all_data/infection/ensemble/holdout_predictions.rds")
+saveRDS(ensemble_predictions, "output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
