@@ -435,7 +435,11 @@ output/plots/existing_predictions.pdf:	data/internal/timetree_amniota.nwk \
 
 
 # TODO: add SI plot (plot_prediction_comparison.R)
-
+output/plots/existing_predictions_supplement.pdf:	data/internal/timetree_amniota.nwk \
+													output/plots/intermediates/prediction_dendrogram.rds \
+													output/plots/raw_data_overview.pdf \
+													data/calculated/cleaned_infection_data.rds
+	Rscript scripts/plotting/plot_existing_predictions_supplement.R
 
 
 # - Get taxonomy
