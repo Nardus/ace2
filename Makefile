@@ -304,12 +304,28 @@ train:	train_feature_subsets \
 .PRECIOUS: $(FEATURE_MODELS) $(PHYLO_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
 
 
-# ---- Train an ensemble model ---------------------------------------------------------------------
-output/all_data/infection/ensemble/predictions.rds: $(TRAINING_REQUIREMENTS) \
-													data/calculated/features_phylogeny_eigenvectors.rds \
-													output/all_data/infection/all_features/predictions.rds \
-													output/all_data/infection/phylogeny/predictions.rds
-	Rscript scripts/train_ensemble.R
+# ---- Train ensemble models ----------------------------------------------------------------------
+# All ACE2 + phylogeny
+output/all_data/infection/ensemble_all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+																			data/calculated/features_phylogeny_eigenvectors.rds \
+																			output/all_data/infection/all_features/predictions.rds \
+																			output/all_data/infection/phylogeny/predictions.rds
+	Rscript scripts/train_ensemble.R \
+			--m1 output/all_data/infection/all_features \
+			--m2 output/all_data/infection/phylogeny \
+			--output_path $(@D) \
+			--random_seed 10012022
+
+# ACE2 distance and binding affinity
+output/all_data/infection/ensemble_aa_distance_binding_affinity/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+																					data/calculated/features_phylogeny_eigenvectors.rds \
+																					output/all_data/infection/aa_distance/predictions.rds \
+																					output/all_data/infection/binding_affinity/predictions.rds
+	Rscript scripts/train_ensemble.R \
+			--m1 output/all_data/infection/aa_distance \
+			--m2 output/all_data/infection/binding_affinity \
+			--output_path $(@D) \
+			--random_seed 09524845
 
 
 # ---- Predict other species for which ACE2 sequences are available --------------------------------
@@ -324,7 +340,7 @@ output/all_data/infection/all_features/holdout_predictions.rds: output/all_data/
 # ---- Plots ---------------------------------------------------------------------------------------
 # Diagnostic plots
 output/plots/performance.png: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS) \
-								output/all_data/infection/ensemble/predictions.rds
+								output/all_data/infection/ensemble_all_features_phylogeny/predictions.rds
 	Rscript scripts/plotting/plot_performance_diagnostics.R
 
 # Data overview plots
@@ -356,7 +372,8 @@ output/plots/accuracy.pdf:	$(FEATURE_MODELS) \
 							$(PHYLO_MODELS) \
 							output/all_data/infection/all_features_phylogeny/predictions.rds \
 							output/all_data/infection/aa_distance_phylogeny/predictions.rds \
-							output/all_data/infection/ensemble/predictions.rds
+							output/all_data/infection/ensemble_all_features_phylogeny/predictions.rds \
+							output/all_data/infection/ensemble_aa_distance_binding_affinity/predictions.rds
 	Rscript scripts/plotting/plot_accuracy.R infection $@
 
 # - Supplement (S-binding only)
@@ -432,7 +449,7 @@ output/plots/holdout_predictions.png: output/all_data/infection/all_features/hol
 	Rscript scripts/plotting/plot_holdout_predictions.R
 
 # - Maps
-output/plots/prediction_maps.png:	output/all_data/infection/ensemble/holdout_predictions.rds \
+output/plots/prediction_maps.png:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
 									output/all_data/infection/phylogeny/holdout_predictions.rds \
 									data/internal/timetree_mammalia.nwk \
 									data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
@@ -442,7 +459,7 @@ output/plots/prediction_maps.png:	output/all_data/infection/ensemble/holdout_pre
 									data/calculated/taxonomy.rds
 	Rscript scripts/plotting/plot_holdout_maps.R
 
-output/plots/ace2_availability_map_supplement.png:	output/all_data/infection/ensemble/holdout_predictions.rds \
+output/plots/ace2_availability_map_supplement.png:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
 													data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
 													data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
 													data/iucn_range_maps/MAMMALS_FRESHWATER.shp \

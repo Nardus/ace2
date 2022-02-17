@@ -1,4 +1,4 @@
-# Evaluate an ensemble model combining the ACE2-based and phylogeny-based predictions
+# Evaluate an ensemble model combining the predictions from two models
 # - Since we have trained models for each CV fold (and these match since we used LOO-CV), 
 #   there's no need to retrain the base models
 # - However, we do need to test our cutoff-finding method on the averaged predictions,
@@ -6,6 +6,29 @@
 
 # NOTE: this script uses a lot of memory - reduce N_CORES if needed to control this
 
+# ---- Input args ----------------------------------------------------------------------------------
+suppressPackageStartupMessages({
+  library(argparse)
+})
+
+parser <- ArgumentParser(description = "Train an ensemble averaging predictions accross two models")
+
+parser$add_argument("--m1", type = "character", 
+                    help = "Path to the output of an existing model")
+                    
+parser$add_argument("--m2", type = "character", 
+                    help = "Path to the output of another model")
+
+parser$add_argument("--output_path", type = "character",
+                    help = "location for output files. Missing folders will be created.")
+                    
+parser$add_argument("--random_seed", type = "integer", 
+                    help = "Random seed")
+
+INPUT <- parser$parse_args()
+
+
+# ---- Other setup ---------------------------------------------------------------------------------
 suppressPackageStartupMessages({
   library(dplyr)
   library(tidyr)
@@ -21,7 +44,8 @@ suppressPackageStartupMessages({
 })
 
 N_CORES = 12  # Number of threads run in parallel
-set.seed(10012022)
+set.seed(INPUT$random_seed)
+
 
 # ---- Data & models -------------------------------------------------------------------------------
 # Data
@@ -47,45 +71,45 @@ stopifnot(nrow(final_data) == n_distinct(metadata$species))
 
 
 # Read base models
-base_model_ace2 <- read_rds("output/all_data/infection/all_features/cv_models.rds")
-base_model_phylo <- read_rds("output/all_data/infection/phylogeny/cv_models.rds")
+base_model_m1 <- read_rds(file.path(INPUT$m1, "cv_models.rds"))
+base_model_m2 <- read_rds(file.path(INPUT$m2, "cv_models.rds"))
 
 # Base predictions
-base_preds_ace2 <- read_rds("output/all_data/infection/all_features/predictions.rds")
-base_preds_phylo <- read_rds("output/all_data/infection/phylogeny/predictions.rds")
+base_preds_m1 <- read_rds(file.path(INPUT$m1, "predictions.rds"))
+base_preds_m2 <- read_rds(file.path(INPUT$m2, "predictions.rds"))
 
 
 # ---- Pre-processing ------------------------------------------------------------------------------
 # Combine predictions
-base_preds_combined <- base_preds_ace2 %>% 
+base_preds_combined <- base_preds_m1 %>% 
   select(.data$species, .data$label,
-         ace2_pred = .data$p_true) %>% 
-  left_join(base_preds_phylo, by = c("species", "label")) %>% 
-  select(.data$species, .data$label, .data$ace2_pred,
-         phylo_pred = .data$p_true) 
+         m1_pred = .data$p_true) %>% 
+  left_join(base_preds_m2, by = c("species", "label")) %>% 
+  select(.data$species, .data$label, .data$m1_pred,
+         m2_pred = .data$p_true) 
 
 # Find holdout virus of each fold
 # - Order may differ between models
-inds_ace2 <- base_preds_ace2$cv_fold
-names(inds_ace2) <- base_preds_ace2$species
+inds_m1 <- base_preds_m1$cv_fold
+names(inds_m1) <- base_preds_m1$species
 
-inds_phylo <- base_preds_phylo$cv_fold
-names(inds_phylo) <- base_preds_phylo$species
+inds_m2 <- base_preds_m2$cv_fold
+names(inds_m2) <- base_preds_m2$species
 
 # Match models to holdout viruses
-stopifnot(all(names(inds_ace2) %in% names(inds_phylo)))
+stopifnot(all(names(inds_m1) %in% names(inds_m2)))
 
-base_models <- lapply(names(inds_ace2), function(sp) list(species = sp,
-                                                          ace2 = base_model_ace2[[inds_ace2[sp]]],
-                                                          phylo = base_model_phylo[[inds_phylo[sp]]]))
+base_models <- lapply(names(inds_m1), function(sp) list(species = sp,
+                                                        model_1 = base_model_m1[[inds_m1[sp]]],
+                                                        model_2 = base_model_m2[[inds_m2[sp]]]))
 
 
 # ---- Cross-validate ensemble model ---------------------------------------------------------------
 # Training (find optimal cutoff in each fold)
 train_ensemble <- function(models, all_data = final_data, base_preds = base_preds_combined) {
   test_species <- models$species
-  ace2_model <- models$ace2
-  phylo_model <- models$phylo
+  m1_model <- models$model_1
+  m2_model <- models$model_2
   
   # Get best cutoff
   training_data <- all_data %>% 
@@ -93,10 +117,10 @@ train_ensemble <- function(models, all_data = final_data, base_preds = base_pred
   
   combined_predictions <- training_data %>% 
     select(.data$species, .data$label) %>% 
-    mutate(ace2_pred = predict(ace2_model, new_data = training_data, type = "raw"),
-           phylo_pred = predict(phylo_model, new_data = training_data, type = "raw")) %>% 
+    mutate(m1_pred = predict(m1_model, new_data = training_data, type = "raw"),
+           m2_pred = predict(m2_model, new_data = training_data, type = "raw")) %>% 
     group_by(.data$species, .data$label) %>% 
-    summarise(probability = mean(c(.data$ace2_pred, .data$phylo_pred)), 
+    summarise(probability = mean(c(.data$m1_pred, .data$m2_pred)), 
               .groups = "drop")
   
   cutoff <- find_best_cuttof(combined_predictions)
@@ -104,7 +128,7 @@ train_ensemble <- function(models, all_data = final_data, base_preds = base_pred
   # Return test prediction
   base_preds %>% 
     filter(.data$species == test_species) %>% 
-    mutate(probability = mean(c(.data$ace2_pred, .data$phylo_pred)),
+    mutate(probability = mean(c(.data$m1_pred, .data$m2_pred)),
            cutoff = cutoff,
            prediction = if_else(.data$probability > cutoff, "True", "False"))
 }
@@ -126,6 +150,6 @@ cleaned_predictions <- test_predictions %>%
   select(.data$species, .data$label, .data$cv_fold, .data$prediction, 
          .data$cutoff, .data$p_true, .data$p_false)
 
-dir.create("output/all_data/infection/ensemble/", recursive = TRUE)
-saveRDS(test_predictions, "output/all_data/infection/ensemble/raw_predictions.rds")
-saveRDS(cleaned_predictions, "output/all_data/infection/ensemble/predictions.rds")
+dir.create(INPUT$output_path, recursive = TRUE)
+saveRDS(test_predictions, file.path(INPUT$output_path, "raw_predictions.rds"))
+saveRDS(cleaned_predictions, file.path(INPUT$output_path, "predictions.rds"))

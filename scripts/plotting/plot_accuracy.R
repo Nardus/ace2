@@ -49,16 +49,18 @@ RUN_LABELS <- c("aa_categorical" = "AA categorical",
                 "all_features" = "All ACE2 representations\ncombined",
                 "all_features_phylogeny" = "All ACE2 representations +\nphylogenetic eigenvectors",
                 "aa_distance_phylogeny" = "AA consensus distance + \nphylogenetic eigenvectors",
-                "ensemble" = "ACE2 / phylogeny\nensemble")
+                "ensemble_all_features_phylogeny" = "ACE2 / phylogeny\nensemble",
+                "ensemble_aa_distance_binding_affinity" = "AA distance / binding affinity\nensemble")
 
 phylo_runs <- c("phylogeny", "all_features_phylogeny", "aa_distance_phylogeny")
+ensemble_runs <- c("ensemble_all_features_phylogeny", "ensemble_aa_distance_binding_affinity")
 
 test_preds <- test_preds %>% 
   mutate(run_label = factor(.data$run_id, labels = RUN_LABELS, levels = names(RUN_LABELS)),
          run_group = case_when(.data$run_id %in% phylo_runs ~ "Phylogeny",
-                               .data$run_id == "ensemble" ~ " ",
+                               .data$run_id %in% ensemble_runs ~ "Ensemble",
                                TRUE ~ "ACE2 sequence representations"),
-         run_group = factor(.data$run_group, levels = c("ACE2 sequence representations", "Phylogeny", " ")))
+         run_group = factor(.data$run_group, levels = c("ACE2 sequence representations", "Phylogeny", "Ensemble")))
 
 
 # ---- Overall accuracy ----------------------------------------------------------------------------
