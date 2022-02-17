@@ -389,7 +389,37 @@ cat("Pagel's lambda:\n")
 print(lambdas)
 cat("\n")
 
-# Check effect of bird outliers:
+# Calculate Pagel's lambda for ACE2 phylogeny
+# - Correct labels in ACE2 tree
+ace2_tree <- read.tree("data/calculated/gene_tree/ace_genetree.treefile")
+
+internal_metadata <- internal_metadata %>% 
+  filter(.data$ace2_accession != "")
+
+spp_map <- internal_metadata$species %>% 
+  if_else(. == "Canis lupus familiaris", "Canis familiaris", .) %>% 
+  str_extract("^[[:alpha:]]+ [[:alpha:]]+") %>% # Drop subspecies info
+  if_else(. == "Tupaia chinensis", "Tupaia belangeri", .)
+
+names(spp_map) <- internal_metadata$ace2_accession
+
+ace2_tree <- keep.tip(ace2_tree, names(spp_map))
+ace2_tree$tip.label <- as.character(spp_map[ace2_tree$tip.label])
+
+# - Not all species will be present (because of duplicate accessions used for species with no sequence)
+dist_data_ace2 <- dist_data_infection %>% 
+  filter(.data$species %in% ace2_tree$tip.label) %>% 
+  mutate(infected = .data$infected == "True")
+
+# - Calculate lambda
+lambda_ace2 <- get_lambda("infected", data = dist_data_ace2, tree = ace2_tree)
+
+cat("Pagel's lambda (ACE2 phylogeny):\n")
+print(lambda_ace2)
+cat("\n")
+
+
+# Check effect of bird outliers on distance results:
 bird_spp <- c("Anser anser", "Anser cygnoides", "Anas platyrhynchos", "Gallus gallus", 
               "Meleagris gallopavo", "Coturnix japonica")
 
