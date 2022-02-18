@@ -30,8 +30,10 @@ taxonomy <- read_rds("data/calculated/taxonomy.rds")
 continent_outlines <- st_read("data/external/iucn_base/", "Land_Masses_and_Ocean_Islands")
 iucn_range_terrestrial <- st_read("data/iucn_range_maps/", "MAMMALS_TERRESTRIAL_ONLY")
 iucn_range_freshwater <- st_read("data/iucn_range_maps/", "MAMMALS_FRESHWATER") # Semi-aquatic
+iucn_range_marineter <- st_read("data/iucn_range_maps/", "MAMMALS_MARINE_AND_TERRESTRIAL") # Semi-aquatic (marine)
 
-iucn_ranges <- rbind(iucn_range_terrestrial, iucn_range_freshwater)
+iucn_ranges <- iucn_range_terrestrial
+excluded_ranges <- rbind(iucn_range_freshwater, iucn_range_marineter)
 
 
 # ---- Fix taxonomy --------------------------------------------------------------------------------
@@ -41,14 +43,6 @@ domestic_species <- c("Bos taurus", "Felis catus", "Equus caballus", "Cavia porc
                       "Vicugna pacos", "Equus przewalskii", "Camelus bactrianus",
                       "Equus asinus", "Bos indicus", "Bos indicus x Bos taurus",
                       "Camelus dromedarius", "Canis familiaris")
-marine_species <- c("Orcinus orca", "Tursiops truncatus", 
-                    "Physeter catodon", "Balaenoptera acutorostrata",
-                    "Delphinapterus leucas", "Lagenorhynchus obliquidens", "Monodon monoceros",
-                    "Globicephala melas", "Phocoena sinus", "Balaenoptera musculus")
-semimarine_species <- c("Odobenus rosmarus", "Leptonychotes weddellii", "Ursus maritimus", 
-                        "Neomonachus schauinslandi", "Enhydra lutris", "Callorhinus ursinus",
-                        "Zalophus californianus", "Eumetopias jubatus", "Mirounga leonina",
-                        "Halichoerus grypus") 
 
 mammals <- taxonomy %>% 
   filter(.data$class == "Mammalia") %>% 
@@ -59,8 +53,7 @@ plot_species <- data.frame(species = ensemble_predictions$species) %>%
   filter(.data$species %in% mammals) %>% 
   filter(.data$species != "Homo sapiens") %>% 
   filter(!.data$species %in% domestic_species) %>% 
-  filter(!.data$species %in% marine_species) %>% 
-  filter(!.data$species %in% semimarine_species) %>% 
+  filter(!.data$species %in% excluded_ranges$binomial) %>% 
   pull(.data$species)
 
 missing_spp <- plot_species[!plot_species %in% iucn_ranges$binomial]

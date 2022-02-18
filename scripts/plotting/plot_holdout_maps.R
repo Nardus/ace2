@@ -36,9 +36,10 @@ bird_tree <- read.tree("data/internal/timetree_aves.nwk")
 continent_outlines <- st_read("data/external/iucn_base/", "Land_Masses_and_Ocean_Islands")
 iucn_range_terrestrial <- st_read("data/iucn_range_maps/", "MAMMALS_TERRESTRIAL_ONLY")
 iucn_range_freshwater <- st_read("data/iucn_range_maps/", "MAMMALS_FRESHWATER") # Semi-aquatic
-#iucn_range_marineter <- st_read("data/iucn_range_maps/", "MAMMALS_MARINE_AND_TERRESTRIAL") # Semi-aquatic (marine)
+iucn_range_marineter <- st_read("data/iucn_range_maps/", "MAMMALS_MARINE_AND_TERRESTRIAL") # Semi-aquatic (marine)
 
-iucn_ranges <- rbind(iucn_range_terrestrial, iucn_range_freshwater)#, iucn_range_marineter)
+iucn_ranges <- iucn_range_terrestrial
+excluded_ranges <- rbind(iucn_range_freshwater, iucn_range_marineter)
 
 
 # ---- Fix taxonomy --------------------------------------------------------------------------------
@@ -48,14 +49,6 @@ domestic_species <- c("Bos taurus", "Felis catus", "Equus caballus", "Cavia porc
                       "Vicugna pacos", "Equus przewalskii", "Camelus bactrianus",
                       "Equus asinus", "Bos indicus", "Bos indicus x Bos taurus",
                       "Camelus dromedarius", "Canis familiaris")
-marine_species <- c("Orcinus orca", "Tursiops truncatus", 
-                    "Physeter catodon", "Balaenoptera acutorostrata",
-                    "Delphinapterus leucas", "Lagenorhynchus obliquidens", "Monodon monoceros",
-                    "Globicephala melas", "Phocoena sinus", "Balaenoptera musculus")
-semimarine_species <- c("Odobenus rosmarus", "Leptonychotes weddellii", "Ursus maritimus", 
-                        "Neomonachus schauinslandi", "Enhydra lutris", "Callorhinus ursinus",
-                        "Zalophus californianus", "Eumetopias jubatus", "Mirounga leonina",
-                        "Halichoerus grypus")
 
 mammals <- mammal_tree$tip.label %>% 
   str_replace("_", " ")
@@ -66,8 +59,7 @@ plot_species <- data.frame(species = c(ensemble_predictions$species,
   filter(.data$species %in% mammals) %>% 
   filter(.data$species != "Homo sapiens") %>% 
   filter(!.data$species %in% domestic_species) %>% 
-  filter(!.data$species %in% marine_species) %>% 
-  filter(!.data$species %in% semimarine_species) %>% 
+  filter(!.data$species %in% excluded_ranges$binomial) %>% 
   pull(.data$species)
 
 
@@ -88,21 +80,21 @@ blank_raster <- raster(resolution = RESOLUTION, crs = st_crs(iucn_ranges))
 
 # Basic plot settings always the same:
 base_plot <- ggplot() +
-  scale_x_continuous(breaks = seq(-180, 180, by = 20)) +
-  scale_y_continuous(limits = c(-62.5, 90),
-                     breaks = seq(-60, 80, by = 20)) +
-  labs(x = NULL, y = NULL)
+  labs(x = NULL, y = NULL) +
+  theme(axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        plot.title = element_text(hjust = 0.5, size = 7))
 
 # When counting, no data in raster means 0 (when on land)
 base_plot_counts <- base_plot +
   geom_sf(aes(fill = 0), size = 0.05, data = continent_outlines) +
-  coord_sf(expand = FALSE)
+  coord_sf(ylim = c(-62.5, 90), expand = FALSE)
 
 # When calculating frequencies, all range data are retained in the denominator, so
 # areas with no species are missing data
 base_plot_freq <- base_plot +
   geom_sf(fill = "white", size = 0.05, data = continent_outlines) +
-  coord_sf(expand = FALSE)
+  coord_sf(ylim = c(-62.5, 90), expand = FALSE)
 
 
 # ---- Total susceptible -----------------------------------------------------------------------------
@@ -133,9 +125,11 @@ plot_count_raster <- function(raster_obj, label = "Susceptible\nspecies", base =
 susceptible_raster_ensemble <- get_predicted_raster(ensemble_predictions)
 susceptible_raster_phylogeny <- get_predicted_raster(phylogeny_predictions)
 
-p_count_ensemble <- plot_count_raster(susceptible_raster_ensemble)
+p_count_ensemble <- plot_count_raster(susceptible_raster_ensemble) +
+  ggtitle("ACE2 / phylogeny ensemble")
 
-p_count_phylogeny <- plot_count_raster(susceptible_raster_phylogeny)
+p_count_phylogeny <- plot_count_raster(susceptible_raster_phylogeny) +
+  ggtitle("Phylogeny-only")
 
 
 # ---- Observed / expected -------------------------------------------------------------------------
@@ -163,8 +157,8 @@ plot_oe_raster <- function(raster_obj, label = "Observed/\nexpected", base = bas
   
   p <- base +  
     geom_raster(aes(x = x, y = y, fill = layer), data = rasterdf) +
-    scale_fill_continuous_diverging(breaks = breaks_pretty(), na.value = NA, limits = limits,
-                                    mid = 1) +
+    scale_fill_continuous_diverging("Blue-Red 2", breaks = breaks_pretty(), na.value = NA, 
+                                    limits = limits, mid = 1) +
     labs(fill = label)
   
   if (!guide) {
@@ -206,21 +200,16 @@ p_obs_phylogeny <- plot_oe_raster(oe_phylogeny,
 
 
 # ---- Output --------------------------------------------------------------------------------------
-top_row <- plot_grid(p_count_ensemble, p_count_phylogeny,
-                     ncol = 2, rel_widths = c(1, 1),
-                     labels = c("A", "B"))
-
-bottom_row <- plot_grid(p_obs_ensemble, p_obs_phylogeny,
-                        ncol = 2, rel_widths = c(1, 1),
-                        labels = c("C", "D"))
-
-
-
-combined_plot <- plot_grid(top_row, bottom_row,
-                           nrow = 2)
+combined_plot <- plot_grid(p_count_ensemble, p_count_phylogeny,
+                           p_obs_ensemble, p_obs_phylogeny,
+                           nrow = 2, rel_heights = c(1.11, 1),
+                           align = "v", axis = "lrtb",
+                           labels = c("A", "B", "C", "D"),
+                           vjust = c(2.5, 2.5, 1.5, 1.5),
+                           label_colour = c("grey20", "white", "grey20", "grey20"))
 
 ggsave2("output/plots/prediction_maps.png", combined_plot,
-        width = 7, height = 3.2)
+        width = 7, height = 2.74)
 
 
 # ---- Values in text ------------------------------------------------------------------------------
