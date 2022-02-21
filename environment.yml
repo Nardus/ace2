@@ -33,7 +33,9 @@ dependencies:
   - r-apcluster=1.4.8
   - r-sf=1.0_1
   - r-raster=3.4_13
+  - r-fasterize=1.0.3
   - r-taxize=0.9.99
+  - r-taxizedb=0.3.0
   - r-phytools=0.7_80 
   - r-ggbeeswarm=0.6.0
   - r-ggsignif=0.6.2
