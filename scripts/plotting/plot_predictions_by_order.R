@@ -1,4 +1,4 @@
-## Plot an overview of predictions for non-training species
+## Plot an overview of predictions by order
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -28,7 +28,21 @@ time_tree <- read.tree("data/internal/timetree_amniota.nwk")
 
 
 # ---- Prepare tree --------------------------------------------------------------------------------
-# Change taxonomy to match tree
+## Change taxonomy to match tree
+# Fix polyphyletic clades
+taxonomy_table <- taxonomy_table %>% 
+  mutate(order = case_when(family %in% c("Erinaceidae", "Soricidae", "Talpidae", "Solenodontidae") ~ "Eulipotyphla",
+                           order %in% c("Cetacea", "Artiodactyla") ~ "Cetartiodactyla",
+                           family %in% c("Scopidae", "Balaenicipitidae") ~ "Ciconiiformes",  # According to NCBI taxonomy
+                           order %in% c("Suliformes", "Pelecaniformes") ~ "Pelecaniformes/Suliformes",
+                           family == "Cathartidae" ~ "Ciconiiformes",
+                           family == "Aegothelidae" ~ "Aegotheliformes", 
+                           order %in% c("Leptosomiformes", "Coraciiformes") ~ "Coraciiformes/Leptosomiformes",  
+                           TRUE ~ order)) %>% 
+  filter(family != "Thinocoridae")  # Can't fix poor placement
+
+
+# Species names
 tree_taxonomy <- taxonomy_table %>% 
   filter(.data$internal_name %in% phylogeny_predictions$species) %>% 
   filter(.data$species != "Bos indicus x Bos taurus") %>% 
@@ -47,6 +61,8 @@ tree_taxonomy <- tree_taxonomy %>%
                                    internal_name == "Neophocaena asiaeorientalis" ~ "Neophocaena phocaenoides",
                                    TRUE ~ internal_name))
 
+
+## Convert to order level
 # Reduce to relevant species
 time_tree$tip.label <- str_replace_all(time_tree$tip.label, "_", " ")
 
@@ -69,7 +85,7 @@ for (ord in unique(tree_taxonomy$order)) {
 # ---- Plot tree -----------------------------------------------------------------------------------
 tree_panel <- ggtree(time_tree, right = TRUE) +
   geom_rootedge(rootedge = 10) +
-  geom_tiplab(linetype = 1, align = TRUE, offset = ) +  # Compensate for overtrimming above
+  geom_tiplab(linetype = 1, align = TRUE, offset = 0) +  # Compensate for overtrimming above
   scale_x_continuous(expand = expansion(add = 0)) +
   scale_y_discrete(expand = expansion(add = c(0.5, 0.5))) +
   coord_cartesian(clip = "off") +
@@ -125,7 +141,7 @@ data_panel <- ggplot(order_summary, aes(x = order, y = prop_susceptible, fill  =
   geom_col() +
   geom_errorbar(aes(ymin = lower, ymax = upper),
                 width = 0.4,
-                color = "grey20") +
+                color = "grey40") +
   
   scale_x_discrete(position = "top") +
   scale_y_continuous(expand = expansion(add = c(0, 0.05))) +
@@ -148,10 +164,11 @@ count_summary <- order_summary %>%
 count_labels <- count_summary %>% 
   arrange(.data$order) %>% 
   group_by(.data$run_label, .data$n_species, .data$n_susceptible) %>% 
-  filter(n() < 4) %>% 
+  filter(.data$n_susceptible > 0) %>% 
+  #filter(n() < 4) %>% 
   summarise(order = paste(.data$order, collapse = ", "),
             .groups = "drop") %>% 
-  mutate(angle = if_else(.data$n_susceptible == 0 | .data$n_species < 9, 45, 0))
+  mutate(angle = if_else(.data$n_susceptible == 0, 45, 0))
 
 
 count_plot <- ggplot(count_summary, aes(x = log10(n_species), y = log10(n_susceptible), colour = class)) +

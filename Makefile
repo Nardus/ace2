@@ -450,9 +450,18 @@ output/plots/intermediates/taxonomy_table.rds: output/all_data/infection/all_fea
 	Rscript scripts/plotting/get_taxonomy.R
 
 # - Prediction overview (phylogeny)
-output/plots/holdout_predictions.png: output/all_data/infection/all_features/holdout_predictions.rds \
-										output/plots/intermediates/taxonomy_table.rds
-	Rscript scripts/plotting/plot_holdout_predictions.R
+output/plots/predictions_by_order_supplement.pdf:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
+													output/all_data/infection/phylogeny/holdout_predictions.rds \
+													data/calculated/cleaned_infection_data.rds \
+													data/calculated/taxonomy.rds \
+													data/internal/timetree_amniota.nwk
+	Rscript scripts/plotting/plot_predictions_by_order.R
+
+output/plots/predictions_by_family_supplement.pdf:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
+													output/all_data/infection/phylogeny/holdout_predictions.rds \
+													data/calculated/cleaned_infection_data.rds \
+													data/calculated/taxonomy.rds
+	Rscript scripts/plotting/plot_predictions_by_family.R
 
 # - Maps
 output/plots/prediction_maps.png:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
@@ -463,7 +472,7 @@ output/plots/prediction_maps.png:	output/all_data/infection/ensemble_all_feature
 									data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
 									output/all_data/infection/all_features/holdout_predictions.rds \
 									data/calculated/taxonomy.rds
-	Rscript scripts/plotting/plot_holdout_maps.R
+	Rscript scripts/plotting/plot_prediction_maps.R
 
 output/plots/ace2_availability_map_supplement.png:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
 													data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
@@ -471,6 +480,13 @@ output/plots/ace2_availability_map_supplement.png:	output/all_data/infection/ens
 													data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
 													data/calculated/taxonomy.rds
 	Rscript scripts/plotting/plot_ace2_availability_map_supplement.R
+
+output/plots/prediction_maps_by_order.png:	output/all_data/infection/phylogeny/holdout_predictions.rds \
+											data/calculated/cleaned_infection_data.rds \
+											data/calculated/taxonomy.rds \
+											data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp
+	Rscript scripts/plotting/plot_maps_by_order.R
+
 
 # - Prioritisation based on scores
 output/plots/phylogeny_predictions_supplement.pdf:	output/all_data/infection/phylogeny/holdout_predictions.rds \
