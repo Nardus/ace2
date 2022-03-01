@@ -20,6 +20,8 @@ set.seed(2312532)
 ace2_workflow <- read_rds("output/all_data/infection/all_features/trained_model_workflow.rds")
 phylo_workflow <- read_rds("output/all_data/infection/phylogeny/trained_model_workflow.rds")
 
+taxonomy <- read_rds("data/calculated/taxonomy.rds")
+
 
 # ---- Metadata ------------------------------------------------------------------------------------
 # Used for training
@@ -30,10 +32,14 @@ training_metadata <- read_rds("data/calculated/cleaned_infection_data.rds") %>%
 # - Removing both matched species names AND accessions already used to represent related species
 additional_metadata <- read_csv("data/internal/NCBI_ACE2_orthologs.csv",
                                 col_types = cols(.default = "c")) %>% 
-  select(species = .data$`Scientific name`, 
+  select(internal_name = .data$`Scientific name`, 
          ace2_accession = .data$`RefSeq Protein accessions`) %>% 
+  left_join(taxonomy, by = "internal_name") %>% 
+  select(-.data$internal_name) %>% 
   filter(!.data$species %in% training_metadata$species & 
-           !.data$ace2_accession %in% training_metadata$ace2_accession)
+           !.data$ace2_accession %in% training_metadata$ace2_accession) %>% 
+  distinct(.data$species, .data$ace2_accession) %>% 
+  filter(!.data$ace2_accession %in% c("XP_006194263.1"))  # Remove duplicate for wild camels
 
 final_metadata <- training_metadata %>% 
   bind_rows(additional_metadata) %>% 

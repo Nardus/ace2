@@ -184,6 +184,7 @@ final_taxonomy <- final_taxonomy %>%
                              TRUE ~ species),
          order = case_when(species == "Echinops telfairi" ~ "Afrosoricida",
                            species == "Chrysochloris asiatica" ~ "Afrosoricida",
+                           species == "Huetia leucorhinus" ~ "Afrosoricida",
                            TRUE ~ order))
 
 

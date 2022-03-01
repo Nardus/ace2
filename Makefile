@@ -114,7 +114,8 @@ data/calculated/cleaned_infection_data.rds: data/internal/infection_data.xlsx da
 
 # Calculate features
 data/calculated/features_pairwise_dists.rds: data/calculated/ace2_protein_alignment.fasta \
-                                             data/calculated/cleaned_infection_data.rds
+                                             data/calculated/cleaned_infection_data.rds \
+											 data/calculated/taxonomy.rds
 	Rscript scripts/calculate_features_aa.R
 
 data/calculated/features_phylogeny_eigenvectors.rds: data/internal/timetree_amniota.nwk \
@@ -268,7 +269,7 @@ output/l1+2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMEN
 
 # ---- Enemurate training combinations ------------------------------------------------------------
 # Feature subsets
-RESPONSE_VARS = infection
+RESPONSE_VARS = infection shedding
 FEATURE_SET_NAMES = $(subst --, , $(ALL_FEATURE_SETS))  # Remove leading "--"
 
 FEATURE_FOLDERS =	$(foreach a,$(RESPONSE_VARS), \
@@ -306,24 +307,24 @@ train:	train_feature_subsets \
 
 # ---- Train ensemble models ----------------------------------------------------------------------
 # All ACE2 + phylogeny
-output/all_data/infection/ensemble_all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-																			data/calculated/features_phylogeny_eigenvectors.rds \
-																			output/all_data/infection/all_features/predictions.rds \
-																			output/all_data/infection/phylogeny/predictions.rds
+output/all_data/%/ensemble_all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+																	data/calculated/features_phylogeny_eigenvectors.rds \
+																	output/all_data/%/all_features/predictions.rds \
+																	output/all_data/%/phylogeny/predictions.rds
 	Rscript scripts/train_ensemble.R \
-			--m1 output/all_data/infection/all_features \
-			--m2 output/all_data/infection/phylogeny \
+			--m1 output/all_data/$*/all_features \
+			--m2 output/all_data/$*/phylogeny \
 			--output_path $(@D) \
 			--random_seed 10012022
 
 # ACE2 distance and binding affinity
-output/all_data/infection/ensemble_aa_distance_binding_affinity/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-																					data/calculated/features_phylogeny_eigenvectors.rds \
-																					output/all_data/infection/aa_distance/predictions.rds \
-																					output/all_data/infection/binding_affinity/predictions.rds
+output/all_data/%/ensemble_aa_distance_binding_affinity/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+																			data/calculated/features_phylogeny_eigenvectors.rds \
+																			output/all_data/%/aa_distance/predictions.rds \
+																			output/all_data/%/binding_affinity/predictions.rds
 	Rscript scripts/train_ensemble.R \
-			--m1 output/all_data/infection/aa_distance \
-			--m2 output/all_data/infection/binding_affinity \
+			--m1 output/all_data/$*/aa_distance \
+			--m2 output/all_data/$*/binding_affinity \
 			--output_path $(@D) \
 			--random_seed 09524845
 
@@ -333,6 +334,7 @@ output/all_data/infection/ensemble_aa_distance_binding_affinity/predictions.rds:
 output/all_data/infection/all_features/holdout_predictions.rds: output/all_data/infection/all_features/predictions.rds \
 																data/calculated/cleaned_infection_data.rds \
 																data/internal/NCBI_ACE2_orthologs.csv \
+																data/calculated/taxonomy.rds \
 																$(TRAINING_REQUIREMENTS)
 	Rscript scripts/predict_holdout.R
 
@@ -383,7 +385,7 @@ output/plots/accuracy_supplement_sbinding.pdf:	data/calculated/cleaned_infection
 
 # - Supplement (shedding models)
 output/plots/accuracy_shedding.pdf:	$(FEATURE_MODELS) \
-									output/all_data/shedding/ensemble/predictions.rds
+									output/all_data/shedding/ensemble_all_features_phylogeny/predictions.rds
 	Rscript scripts/plotting/plot_accuracy.R shedding $@
 
 # - Supplement (data quality  / evidence level)

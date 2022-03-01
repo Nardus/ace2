@@ -34,12 +34,18 @@ sequence_metadata <- infection_data %>%
 
 # Data for holdout species
 # - Removing both matched species names AND accessions already used to represent related species
+taxonomy <- read_rds("data/calculated/taxonomy.rds")
+
 additional_metadata <- read_csv("data/internal/NCBI_ACE2_orthologs.csv",
                                 col_types = cols(.default = "c")) %>% 
-  select(species = .data$`Scientific name`, 
+  select(internal_name = .data$`Scientific name`, 
          ace2_accession = .data$`RefSeq Protein accessions`) %>% 
+  left_join(taxonomy, by = "internal_name") %>% 
+  select(-.data$internal_name) %>% 
   filter(!.data$species %in% sequence_metadata$species & 
-           !.data$ace2_accession %in% sequence_metadata$ace2_accession)
+           !.data$ace2_accession %in% sequence_metadata$ace2_accession) %>% 
+  distinct(.data$species, .data$ace2_accession) %>% 
+  filter(!.data$ace2_accession %in% c("XP_006194263.1"))  # Remove duplicate for wild camels
 
 sequence_metadata <- sequence_metadata %>% 
   bind_rows(additional_metadata)
