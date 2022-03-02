@@ -133,11 +133,18 @@ p_count_phylogeny <- plot_count_raster(susceptible_raster_phylogeny) +
 
 
 # ---- Observed / expected -------------------------------------------------------------------------
-get_obs_exp_raster <- function(predictions, susceptible_raster, susceptible_frequency,
+get_obs_exp_raster <- function(predictions, susceptible_raster,
                              base_raster = blank_raster, range_data = iucn_ranges) {
   # Expected
   expected_ranges <- range_data %>% 
     filter(.data$binomial %in% predictions$species)
+    
+  # - Expected distribution is the proportion of species predicted as susceptible by this model,
+  #   but distributed equally across all cells
+  preds <- predictions %>% 
+    filter(.data$species %in% expected_ranges$binomial)
+  
+  susceptible_frequency <- sum(preds$predicted_label == "True") / nrow(preds)
   
   species_count <- fasterize(expected_ranges, base_raster, fun = "sum") # Number of species available in each raster cell
   
@@ -168,19 +175,10 @@ plot_oe_raster <- function(raster_obj, label = "Observed/\nexpected", base = bas
   p
 }
 
-# Expected frequency: based on observations among mammals
-mammal_data <- infection_data %>% 
-  rename(internal_name = .data$species) %>% 
-  left_join(taxonomy, by = "internal_name") %>% 
-  filter(.data$class == "Mammalia")
 
-base_frequency <- sum(mammal_data$infected == "True")/nrow(mammal_data)
+oe_ensemble <- get_obs_exp_raster(ensemble_predictions, susceptible_raster_ensemble)
 
-oe_ensemble <- get_obs_exp_raster(ensemble_predictions, susceptible_raster_ensemble, 
-                                  susceptible_frequency = base_frequency)
-
-oe_phylogeny <- get_obs_exp_raster(phylogeny_predictions, susceptible_raster_phylogeny,
-                                   susceptible_frequency = base_frequency)
+oe_phylogeny <- get_obs_exp_raster(phylogeny_predictions, susceptible_raster_phylogeny)
 
 
 # Plot - using same legend scale for both
@@ -205,8 +203,7 @@ combined_plot <- plot_grid(p_count_ensemble, p_count_phylogeny,
                            nrow = 2, rel_heights = c(1.11, 1),
                            align = "v", axis = "lrtb",
                            labels = c("A", "B", "C", "D"),
-                           vjust = c(2.5, 2.5, 1.5, 1.5),
-                           label_colour = c("grey20", "white", "grey20", "grey20"))
+                           vjust = c(2.5, 2.5, 1.5, 1.5))
 
 ggsave2("output/plots/prediction_maps.png", combined_plot,
         width = 7, height = 2.74)
@@ -217,6 +214,11 @@ birds <- bird_tree$tip.label %>%
   str_replace("_", " ")
 
 # Observed data
+mammal_data <- infection_data %>% 
+  rename(internal_name = .data$species) %>% 
+  left_join(taxonomy, by = "internal_name") %>% 
+  filter(.data$class == "Mammalia")
+
 bird_data <- infection_data %>% 
   rename(internal_name = .data$species) %>% 
   left_join(taxonomy, by = "internal_name") %>% 

@@ -66,7 +66,7 @@ base_plot <- ggplot() +
 
 # Display no data as grey (on land)
 base_plot_prop <- base_plot +
-  geom_sf(fill = "grey20", size = 0.05, data = continent_outlines) +
+  geom_sf(fill = "grey90", size = 0.05, data = continent_outlines) +
   coord_sf(ylim = c(-62.5, 90), expand = FALSE)
 
 
@@ -121,7 +121,7 @@ plot_order_raster <- function(raster_obj, taxonomic_order, label = "Proportion\n
   
   p <- base +  
     geom_raster(aes(x = x, y = y, fill = layer), data = rasterdf) +
-    scale_fill_viridis_c(breaks = breaks_pretty(), direction = 1, na.value = NA, limits = limits) +
+    scale_fill_viridis_c(breaks = breaks_pretty(), direction = -1, na.value = NA, limits = limits) +
     labs(title = taxonomic_order, fill = label)
   
   if (!guide) {
