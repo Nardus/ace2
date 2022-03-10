@@ -128,8 +128,12 @@ data_panel <- ggplot(timetree_preds) +
 
 
 # Combine
+timetree_preds <- timetree_preds %>% 
+    left_join(annotation_data, by = c("species"))
+
 shared_legend <- get_legend(
-  ggplot(timetree_preds, aes(x = citation_key, y = scaled_score, fill = scaled_score)) +
+  ggplot(timetree_preds, aes(x = citation_key, y = scaled_score, 
+                             fill = scaled_score, colour = infected)) +
     geom_line() +
     geom_point(shape = 21, colour = "grey20") +
     scale_fill_viridis_c(direction = -1, guide = guide_colorbar(order = 1)) +
@@ -137,7 +141,7 @@ shared_legend <- get_legend(
                           guide = guide_legend(order = 2, keywidth = unit(1.25, "lines"))) +
     scale_colour_manual(values = c(True = "#EE7733", False = "#009988"), 
                         na.value = "grey30", guide = guide_legend(order = 2)) +
-    labs(fill = "Scaled score") +
+    labs(fill = "Scaled score", colour = "Infected") +
     theme(legend.background = element_blank())
 )
 
