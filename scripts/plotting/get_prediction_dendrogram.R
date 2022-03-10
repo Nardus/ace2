@@ -18,29 +18,23 @@ existing_predictions <- read_csv("data/internal/existing_predictions.csv",
 
 taxonomy <- readRDS("data/calculated/taxonomy.rds")
 
-ace2_cv_preds <- readRDS("output/all_data/infection/all_features/predictions.rds")
-phylo_cv_preds <- readRDS("output/all_data/infection/phylogeny/predictions.rds")
-ensemble_cv_preds <- readRDS("output/all_data/infection/ensemble_all_features_phylogeny/predictions.rds")
-
-ace2_holdout_preds <- readRDS("output/all_data/infection/all_features/holdout_predictions.rds") %>% 
-  filter(.data$prediction_type != "Fitted value")
-
-phylo_holdout_preds <- readRDS("output/all_data/infection/phylogeny/holdout_predictions.rds") %>% 
-  filter(.data$prediction_type != "Fitted value")
-
-ensemble_holdout_preds <- readRDS("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds") %>% 
-  filter(.data$prediction_type != "Fitted value")
+# Using holdout predictions and "fitted values", to match earlier studies (which had no cross-validation)
+ace2_preds <- readRDS("output/all_data/infection/all_features/holdout_predictions.rds")
+phylo_preds <- readRDS("output/all_data/infection/phylogeny/holdout_predictions.rds")
+ensemble_preds <- readRDS("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
 
 
 # ---- Fix taxonomy --------------------------------------------------------------------------------
-stopifnot(all(existing_predictions$species %in% taxonomy$internal_name))
+known_invalid <- c("Nyctophilus timoriensis", "Pseudopotto martini") # Invalid/dubious species in Fischoff et al. data (see ITIS records)
+stopifnot(all(existing_predictions$species %in% c(taxonomy$internal_name, known_invalid)))
 
 taxonomy <- taxonomy %>% 
   select(.data$internal_name, .data$species)
 
 existing_predictions <- existing_predictions %>%
   rename(internal_name = .data$species) %>% 
-  left_join(taxonomy, by = "internal_name")
+  left_join(taxonomy, by = "internal_name") %>% 
+  filter(!is.na(.data$species))
 
 
 # Summarise over all subspecies in the same study
@@ -64,57 +58,37 @@ existing_predictions <- existing_predictions %>%
 
 # ---- Add our values ------------------------------------------------------------------------------
 # Unify column names
-ace2_cv_preds <- ace2_cv_preds %>% 
-  select(.data$species, .data$prediction,
-         raw_score = .data$p_true)
-
-phylo_cv_preds <- phylo_cv_preds %>% 
-  select(.data$species, .data$prediction,
-         raw_score = .data$p_true)
-
-ensemble_cv_preds <- ensemble_cv_preds %>% 
-  select(.data$species, .data$prediction,
-         raw_score = .data$p_true)
-
-
-ace2_holdout_preds <- ace2_holdout_preds %>% 
+ace2_preds <- ace2_preds %>% 
   select(.data$species, 
          prediction = .data$predicted_label,
-         raw_score = .data$probability)
-
-phylo_holdout_preds <- phylo_holdout_preds %>% 
-  select(.data$species, 
-         prediction = .data$predicted_label,
-         raw_score = .data$probability)
-
-ensemble_holdout_preds <- ensemble_holdout_preds %>% 
-  select(.data$species, 
-         prediction = .data$predicted_label,
-         raw_score = .data$probability)
-
-
-# Merge
-ace2_predictions <- ace2_cv_preds %>% 
-  bind_rows(ace2_holdout_preds) %>% 
+         raw_score = .data$probability) %>% 
   mutate(citation_key = "This study (ACE2-based)",
          predictor = "ACE2-based",
          prediction_type = "sequence-based")
 
-phylo_predictions <- phylo_cv_preds %>% 
-  bind_rows(phylo_holdout_preds) %>% 
+
+phylo_preds <- phylo_preds %>% 
+  select(.data$species, 
+         prediction = .data$predicted_label,
+         raw_score = .data$probability) %>% 
   mutate(citation_key = "This study (host phylogeny)",
          predictor = "host phylogeny",
          prediction_type = "phylogeny")
 
-ensemble_predictions <- ensemble_cv_preds %>% 
-  bind_rows(ensemble_holdout_preds) %>% 
+
+ensemble_preds <- ensemble_preds %>% 
+  select(.data$species, 
+         prediction = .data$predicted_label,
+         raw_score = .data$probability) %>% 
   mutate(citation_key = "This study (ensemble)",
          predictor = "ensemble",
          prediction_type = "ensemble")
 
-internal_predictions <- ace2_predictions %>% 
-  bind_rows(phylo_predictions) %>% 
-  bind_rows(ensemble_predictions) %>% 
+
+# Merge
+internal_predictions <- ace2_preds %>% 
+  bind_rows(phylo_preds) %>% 
+  bind_rows(ensemble_preds) %>% 
   mutate(reverse_score = FALSE)
 
 all_predictions <- existing_predictions %>% 
@@ -150,3 +124,4 @@ prediction_dendrogram <- as.phylo(as.hclust(prediction_clusters))
 # ---- Output --------------------------------------------------------------------------------------
 saveRDS(prediction_dendrogram, "output/plots/intermediates/prediction_dendrogram.rds")
 saveRDS(all_predictions, "output/plots/intermediates/unified_predictions.rds")
+saveRDS(cor_mat, "output/plots/intermediates/study_correlation_matrix.rds")

@@ -38,19 +38,19 @@ timetree$tip.label <- with(timetree,
                                    as.character(TIMETREE_TAXONOMY_CORRECTIONS[tip.label]),
                                    tip.label))
 
-# ----- Filter predictions to those in timetree ----------------------------------------------------
-timetree_preds <- all_predictions %>% 
-  filter(.data$species %in% timetree$tip.label)
+# ---- Filter to species with known infection data -------------------------------------------------
+all_predictions <- all_predictions %>%
+  filter(.data$species %in% infection_data$species)
 
-# Also remove predictions to our phylogeny-only model (too many, can be shown separately)
-phylo_model_only <- timetree_preds %>% 
-  group_by(.data$species) %>% 
-  filter(n() == 1 & .data$citation_key == "This study (host phylogeny)")
+# Remove studies with <10 species remaining (to reduce clutter)
+all_predictions <- all_predictions %>% 
+  group_by(.data$citation_key) %>% 
+  filter(n() >= 10) %>% 
+  ungroup()
 
-timetree_preds <- timetree_preds %>% 
-  filter(!.data$species %in% phylo_model_only$species)
+prediction_dendrogram <- keep.tip(prediction_dendrogram, unique(all_predictions$citation_key))
 
-timetree <- keep.tip(timetree, unique(timetree_preds$species))
+timetree <- keep.tip(timetree, unique(all_predictions$species))
 
 
 # ---- Heatmap of all predictions ------------------------------------------------------------------
@@ -69,10 +69,19 @@ dendro_panel <- ggtree(prediction_dendrogram, right = TRUE) +
   scale_y_discrete(expand = expansion(add = c(0.35, 1.15))) +
   coord_flip() +
   theme(line = PLOT_THEME$line,
-        plot.margin = margin(t = 5.5, r = 0, b = 0, l = 0))
+        plot.margin = margin(t = 5.5, r = 78, b = 0, l = 0))
 
-phylo_panel <- ggtree(timetree) +
+# Phylogeny - also show observed status here
+annotation_data <- infection_data %>% 
+  select(.data$species, .data$infected)
+
+annotated_tree <- ggtree(timetree, aes(colour = infected)) %<+% annotation_data
+
+phylo_panel <- annotated_tree +
   geom_rootedge(rootedge = 10) +
+  scale_colour_manual(values = INFECTION_STATUS_COLOURS, 
+                      na.value = "grey30",
+                      guide = "none") +
   scale_x_continuous(expand = expansion(add = 0)) +
   scale_y_discrete(expand = expansion(add = 0.5)) +
   coord_cartesian(clip = "off") +
@@ -80,22 +89,28 @@ phylo_panel <- ggtree(timetree) +
   theme(line = PLOT_THEME$line,
         axis.ticks.length = PLOT_THEME$axis.ticks.length,
         axis.text.x = element_text(size = 5.6),
-        plot.margin = margin(t = 0.5, r = 0, b = 81.2, l = 5.5))
+        plot.margin = margin(t = 0, r = 0, b = 69.3, l = 5.5))
 
 phylo_panel <- revts(phylo_panel)
 
 # Get data in correct order
-timetree_preds <- timetree_preds %>% 
+timetree_preds <- all_predictions %>% 
   mutate(species = factor(.data$species, levels = get_tree_order(phylo_panel)),
          citation_key = factor(.data$citation_key, levels = get_tree_order(dendro_panel)))
 
-study_label_df <- timetree_preds %>% 
+study_label_df <- all_predictions %>% 
   distinct(.data$citation_key, .data$prediction_type, .data$predictor) %>% 
-  mutate(study_label = str_to_sentence(.data$citation_key),
-         study_label = str_replace(.data$study_label, "([[:digit:]]{4})[[:alpha:]]*$", " et al., \\1"))
+  mutate(predictor = if_else(.data$predictor == "binding affinity change relative to humans",
+                             "binding affinity change<br/>relative to humans", .data$predictor),
+         study_label = as.character(.data$citation_key),
+         study_label = if_else(startsWith(.data$study_label, "This study"), "**This study**", 
+                               .data$study_label),
+         study_label = str_to_sentence(.data$study_label),
+         study_label = str_replace(.data$study_label, "([[:digit:]]{4})[[:alpha:]]*$", " *et al.*, \\1"),
+         study_label_long = paste0(.data$study_label, "<br/>(", .data$predictor, ")"))
 
-study_labels <- study_label_df$study_label
-names(study_labels) <- study_label_df$citation_key
+study_labels <- study_label_df$study_label_long
+names(study_labels) <- as.character(study_label_df$citation_key)
 
 # Plot data
 data_panel <- ggplot(timetree_preds) +
@@ -107,8 +122,7 @@ data_panel <- ggplot(timetree_preds) +
   
   labs(x = "Prediction source", y = NULL) +
   theme(axis.text.x = element_markdown(angle = 90, hjust = 1, vjust = 0.5),
-        axis.text.y = element_blank(),  # Not labeling species (no space)
-        axis.ticks.y = element_blank(),
+        axis.text.y = element_text(face = "italic"),
         legend.position="none",
         plot.margin = margin(t = 0, r = 5.5, b = 5.5, l = 0))
 
@@ -123,15 +137,16 @@ shared_legend <- get_legend(
                           guide = guide_legend(order = 2, keywidth = unit(1.25, "lines"))) +
     scale_colour_manual(values = c(True = "#EE7733", False = "#009988"), 
                         na.value = "grey30", guide = guide_legend(order = 2)) +
-    labs(fill = "Predicted score\n(scaled)")
+    labs(fill = "Scaled score") +
+    theme(legend.background = element_blank())
 )
 
 phylo_panel2 <- phylo_panel +
-  annotation_custom(shared_legend, xmin = -320, ymin = 3350)
+  annotation_custom(shared_legend, xmin = -380, ymin = 80)
 
 final_heatmap <- plot_grid(NULL, dendro_panel,
                            phylo_panel2, data_panel,
-                           nrow = 2, rel_heights = c(1, 30), rel_widths = c(2, 5))
+                           nrow = 2, rel_heights = c(1, 30), rel_widths = c(1, 5))
 
 
 # ---- Plot summary panels -------------------------------------------------------------------------
@@ -171,14 +186,14 @@ summary_plot <- ggplot(data_predictions, aes(x = infected, y = scaled_score)) +
   scale_shape_manual(values = VIRUS_SHAPES, guide = guide_legend(order = 2, ncol = 2)) +
   labs(x = "Infected", y = "Scaled score", fill = "Best\nevidence", shape = "Virus") +
   theme(legend.position = "top",
-        legend.box = "horizontal",
+        legend.box = "vertical",
         legend.title = element_text(angle = 90, hjust = 0.5, vjust = 0.5),
         strip.text = element_markdown(size = 5, margin = margin(2.5, 2.5, 2.5, 2.5)))
 
 
 # ---- Combine -------------------------------------------------------------------------------------
 final_plot <- plot_grid(final_heatmap, summary_plot,
-                        rel_widths = c(1.5, 2),
+                        rel_widths = c(2, 1.2),
                         labels = c("A", "B"))
 
 ggsave2("output/plots/existing_predictions_supplement.pdf", 
