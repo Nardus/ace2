@@ -282,14 +282,27 @@ dfcor %>%
 
 
 # - Overlap with our models:
+cat("\n\nMax correlation between our models and previous studies:\n")
+dfcor %>% 
+  filter(startsWith(.data$from, "This study")) %>%
+  filter(!startsWith(.data$to, "This study")) %>%
+  group_by(.data$from) %>% 
+  mutate(min_cor = min(.data$cor, na.rm = TRUE),
+         max_cor = max(.data$cor, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  filter(.data$cor == .data$max_cor) %>% 
+  select(-.data$min_cor, -.data$max_cor) %>% 
+  arrange(.data$cor) %>% 
+  print()
+
 ace2_spp <- all_predictions$species[all_predictions$citation_key == "This study (ACE2-based)"]
 phylo_spp <- all_predictions$species[all_predictions$citation_key == "This study (host phylogeny)"]
 huang_spp <- all_predictions$species[all_predictions$citation_key == "huang2020"]
-alexander_spp <- all_predictions$species[all_predictions$citation_key == "alexander2020"]
+melin_spp <- all_predictions$species[all_predictions$citation_key == "melin2020"]
 
-cat("\nACE2-based model shares", sum(ace2_spp %in% huang_spp), "species with Huang et al. 2020\n")
-cat("Ensemble model shares", sum(ace2_spp %in% alexander_spp), "species with Alexander et al. 2020\n")
-cat("Phylogeny-based model shares", sum(phylo_spp %in% alexander_spp), "species with Alexander et al. 2020\n")
+cat("\nACE2-based model shares", sum(ace2_spp %in% melin_spp), "species with Melin et al. 2020\n")
+cat("Ensemble model shares", sum(ace2_spp %in% melin_spp), "species with Melin et al. 2020\n")
+cat("Phylogeny-based model shares", sum(phylo_spp %in% huang_spp), "species with Huang et al. 2020\n")
 
 
 # - Accuracy of directly compared to Huang et al.
