@@ -19,7 +19,8 @@ internal_metadata <- read.csv("data/internal/ace2_accessions.csv") %>%
   pull(.data$species)
 
 existing_predictions <- read.csv("data/internal/existing_predictions.csv") %>% 
-  select(.data$species, .data$citation_key)
+  select(.data$species, .data$citation_key) %>% 
+  pull(.data$species)
 
 haddock_scores <- readRDS("data/calculated/all_haddock_scores.rds") %>% 
   pull(.data$species)
@@ -40,7 +41,7 @@ removals <- (str_detect(timetree_species, " cf.") |
 timetree_species <- timetree_species[!removals]
 
 # - Merge
-all_spp <- c(ncbi_metadata, internal_metadata, existing_predictions$species, 
+all_spp <- c(ncbi_metadata, internal_metadata, existing_predictions, 
              haddock_scores, timetree_species) %>% 
   unique()
 
@@ -50,6 +51,7 @@ corrections <- c("Abrornis humei" = "Phylloscopus humei",
                  "Abrornis inornata" = "Phylloscopus inornatus",
                  "Anser canagica" = "Anser canagicus",
                  "Brachypteryx albiventris" = "Sholicola albiventris",
+                 "Camelus ferus" = "Camelus bactrianus",
                  "Catherpes sumichrasti" = "Hylorchilus sumichrasti",
                  "Chamaeza mollisima" = "Chamaeza mollissima",
                  "Chrysomus cyanopus" = "Agelasticus cyanopus",
@@ -74,8 +76,10 @@ corrections <- c("Abrornis humei" = "Phylloscopus humei",
                  "Poecilotriccus albifascies" = "Poecilotriccus albifacies",
                  "Proechimys trinitatus" = "Proechimys trinitatis",
                  "Schoeniclus aureolus" = "Emberiza aureola",
+                 "Spermophilus saturatus" = "Callospermophilus saturatus",
                  "Urile penicillatus" = "Phalacrocorax penicillatus",
-                 "Urile urile" = "Phalacrocorax urile")
+                 "Urile urile" = "Phalacrocorax urile",
+                 "Zosterops rendovae" = "Zosterops ugiensis")
 
 all_species_corrected <- if_else(all_spp %in% names(corrections),
                                  corrections[all_spp],
@@ -146,6 +150,9 @@ ncbi_taxonomy <- ncbi_taxonomy %>%
 
 
 # Merge
+itis_taxonomy_2 <- itis_taxonomy_2 %>% 
+  filter(!.data$internal_name %in% itis_taxonomy$internal_name)
+
 taxonomy_table <- bind_rows(itis_taxonomy, itis_taxonomy_2, ncbi_taxonomy)
 
 # Reverse name corrections from above
@@ -186,6 +193,9 @@ final_taxonomy <- final_taxonomy %>%
                            species == "Chrysochloris asiatica" ~ "Afrosoricida",
                            species == "Huetia leucorhinus" ~ "Afrosoricida",
                            TRUE ~ order))
+
+# Check for duplicates
+stopifnot(nrow(final_taxonomy) == n_distinct(final_taxonomy$internal_name))
 
 
 # ---- Output --------------------------------------------------------------------------------------

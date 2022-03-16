@@ -22,13 +22,17 @@ taxonomy <- read_rds("data/calculated/taxonomy.rds")
 stopifnot(all(huang_scores$species %in% taxonomy$internal_name))
 stopifnot(all(haddock_scores$species %in% c(taxonomy$internal_name, "Bindicus x btaurus")))
 
+remove_names <- c("Bos indicus", "Camelus ferus")  # Cause duplications at species level
+
 huang_scores <- huang_scores %>% 
+  filter(!.data$species %in% remove_names) %>%
   rename(internal_name = .data$species) %>% 
   left_join(taxonomy, by = "internal_name") %>% 
   select(.data$species, 
          huang_score = .data$raw_score)
 
 haddock_scores <- haddock_scores %>% 
+  filter(!.data$species %in% remove_names) %>%
   rename(internal_name = .data$species) %>% 
   left_join(taxonomy, by = "internal_name") %>% 
   select(.data$species, .data$haddock_score)

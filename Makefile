@@ -135,7 +135,8 @@ data/calculated/s_binding_alignment_positions.rds: data/calculated/ace2_protein_
 
 TRAINING_REQUIREMENTS = data/calculated/cleaned_infection_data.rds \
 						data/calculated/features_pairwise_dists.rds \
-						data/calculated/features_binding_affinity.rds
+						data/calculated/features_binding_affinity.rds \
+						data/calculated/features_phylogeny_eigenvectors.rds
 
 ALL_FEATURE_SETS =	--aa_categorical \
 					--aa_distance \
@@ -187,8 +188,7 @@ output/all_data/%/binding_affinity/predictions.rds: $(TRAINING_REQUIREMENTS)
 		--random_seed 11386168
 
 # Try timetree phylogeny as an alternative to ACE2 sequences:
-output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-												data/calculated/features_phylogeny_eigenvectors.rds
+output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--phylogeny \
 		--random_seed 34264755 \
@@ -205,24 +205,21 @@ output/all_data/%/_supplementary_runs/aa_distance_s_binding/predictions.rds:	$(T
 		--n_threads 20						 
 
 # Phylogeny combined with the best ACE2 models
-output/all_data/%/aa_distance_phylogeny/predictions.rds: $(TRAINING_REQUIREMENTS) \
-														 data/calculated/features_phylogeny_eigenvectors.rds
+output/all_data/%/aa_distance_phylogeny/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_distance \
 		--phylogeny \
 		--random_seed 34264755 \
 		--n_threads 20
 
-output/all_data/%/binding_affinity_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-														 		data/calculated/features_phylogeny_eigenvectors.rds
+output/all_data/%/binding_affinity_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--binding_affinity \
 		--phylogeny \
 		--random_seed 34264755 \
 		--n_threads 20
 
-output/all_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-														 			data/calculated/features_phylogeny_eigenvectors.rds
+output/all_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
 		--phylogeny \
@@ -240,8 +237,7 @@ output/all_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENT
 #  can't be included separately here)
 
 # - Level 2 (experimental infection)
-output/l2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-															data/calculated/features_phylogeny_eigenvectors.rds
+output/l2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
 		--phylogeny \
@@ -249,8 +245,7 @@ output/l2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS
 		--random_seed 23556284
 
 # - Level 3-4 (cell culture)
-output/l3+4_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-															data/calculated/features_phylogeny_eigenvectors.rds
+output/l3+4_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
 		--phylogeny \
@@ -258,8 +253,7 @@ output/l3+4_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMEN
 		--random_seed 43564215
 
 # - Level 1 and 2 (i.e. exclude cell culture, in case it makes things worse)
-output/l1+2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-															data/calculated/features_phylogeny_eigenvectors.rds
+output/l1+2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
 		--phylogeny \
@@ -308,7 +302,6 @@ train:	train_feature_subsets \
 # ---- Train ensemble models ----------------------------------------------------------------------
 # All ACE2 + phylogeny
 output/all_data/%/ensemble_all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-																	data/calculated/features_phylogeny_eigenvectors.rds \
 																	output/all_data/%/all_features/predictions.rds \
 																	output/all_data/%/phylogeny/predictions.rds
 	Rscript scripts/train_ensemble.R \
@@ -319,7 +312,6 @@ output/all_data/%/ensemble_all_features_phylogeny/predictions.rds:	$(TRAINING_RE
 
 # ACE2 distance and binding affinity
 output/all_data/%/ensemble_aa_distance_binding_affinity/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-																			data/calculated/features_phylogeny_eigenvectors.rds \
 																			output/all_data/%/aa_distance/predictions.rds \
 																			output/all_data/%/binding_affinity/predictions.rds
 	Rscript scripts/train_ensemble.R \
@@ -429,7 +421,6 @@ output/plots/intermediates/prediction_dendrogram.rds: 	data/internal/existing_pr
 
 
 output/plots/existing_predictions.pdf:	data/internal/timetree_amniota.nwk \
-										output/plots/intermediates/prediction_dendrogram.rds \
 										output/plots/raw_data_overview.pdf \
 										data/internal/existing_predictions.csv \
 										output/all_data/infection/all_features/holdout_predictions.rds
@@ -443,11 +434,6 @@ output/plots/existing_predictions_supplement.pdf:	data/internal/timetree_amniota
 													data/calculated/cleaned_infection_data.rds
 	Rscript scripts/plotting/plot_existing_predictions_supplement.R
 
-
-# - Get taxonomy
-# TODO: taxonomy table still needed?
-output/plots/intermediates/taxonomy_table.rds: output/all_data/infection/all_features/holdout_predictions.rds
-	Rscript scripts/plotting/get_taxonomy.R
 
 # - Prediction overview (phylogeny)
 output/plots/predictions_by_order_supplement.pdf:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
