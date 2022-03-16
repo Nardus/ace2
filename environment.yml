@@ -40,3 +40,5 @@ dependencies:
   - r-ggbeeswarm=0.6.0
   - r-ggsignif=0.6.2
   - r-vegan=2.5_7
+  - r-bibtex=0.4.2
+  - r-writexl=1.4.0

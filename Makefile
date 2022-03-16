@@ -480,6 +480,19 @@ output/plots/phylogeny_predictions_supplement.pdf:	output/all_data/infection/phy
 	Rscript scripts/plotting/plot_phylogeny_predictions_supplement.R
 
 
+# Supplementary tables
+output/si_tables/supplement_training_data.xlsx: data/internal/infection_data.xlsx \
+												data/internal/ace2_accessions.csv \
+												data/internal/data_citations.bib \
+												data/calculated/cleaned_infection_data.rds \
+												data/calculated/cleaned_shedding_data.rds \
+												data/calculated/taxonomy.rds \
+												output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
+												output/all_data/infection/phylogeny/holdout_predictions.rds \
+												data/internal/NCBI_ACE2_orthologs.csv
+	Rscript scripts/plotting/make_supplementary_tables.R
+
+
 .PHONY: plots
 plots: 	report_data_overview \
 		output/plots/raw_data_overview.pdf \
