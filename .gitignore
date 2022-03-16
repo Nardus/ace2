@@ -44,6 +44,13 @@ vignettes/*.pdf
 /data/iucn_range_maps/MAMMALS_*
 /data/iucn_range_maps/*.pdf
 
-/data/external/
-/data/calculated/
+/data/external/*
+/data/calculated/*
 /output/
+
+# Need these files for reproducibility, since the online sources may change:
+#   - Any sequences removed/updated in future won't be retreivable from 
+#     entrez (e.g. XP_023104564.1)
+#   - Taxonomy changes will impact of range of downstream steps
+!/data/external/ace2_protein_sequences.fasta
+!/data/calculated/taxonomy.rds
