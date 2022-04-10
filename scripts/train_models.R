@@ -93,7 +93,7 @@ if (INPUT$aa_properties)
   feature_prefixes <- c(feature_prefixes, "property_")
 
 if (INPUT$distance_to_humans)
-  feature_prefixes <- c(feature_prefixes, "distance_to_humans", "distance_to_rhinolophid")
+  feature_prefixes <- c(feature_prefixes, "distance_to_humans")
 
 if (INPUT$distance_to_positive)
   feature_prefixes <- c(feature_prefixes, "closest_positive_")

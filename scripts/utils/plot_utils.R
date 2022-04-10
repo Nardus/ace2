@@ -35,7 +35,8 @@ as_human_coord_v <- function(alignment_coords) {
 # Expects a data.frame with a column named "feature"
 add_readable_feature_names <- function(x) {
   x %>% 
-    mutate(feature_type = case_when(startsWith(.data$feature, "dist_") ~ "Consensus distance",
+    mutate(feature_type = case_when(.data$feature == "distance_to_humans" ~ "Distance to\nhuman ACE2",
+                                    startsWith(.data$feature, "dist_") ~ "Consensus distance",
                                     startsWith(.data$feature, "variable_site") ~ "Amino acid identity",
                                     startsWith(.data$feature, "property_polarity") ~ "Polarity",
                                     startsWith(.data$feature, "property_hydrophobicity") ~ "Hydrophobicity",

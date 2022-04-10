@@ -75,18 +75,6 @@ dist_to_humans <- dist_data %>%
 
 stopifnot(nrow(dist_to_humans) == length(ace2_alignment))
 
-# Also include mean distance to rhinolophids as an analogous measure:
-rhinolophid_accessions <- with(sequence_metadata, 
-                               ace2_accession[startsWith(species, "Rhinolophus")])
-
-dist_to_rhinolophids <- dist_data %>% 
-  left_join(sequence_metadata, by = c("other_seq" = "ace2_accession")) %>% 
-  group_by(.data$ace2_accession) %>% 
-  summarise(distance_to_rhinolophid = mean(.data$distance))
-
-dist_to_humans <- dist_to_humans %>% 
-  left_join(dist_to_rhinolophids, by = "ace2_accession")
-
 
 # ---- Variable sites (categorical) ---------------------------------------------------------------
 # To find variable sites, compare all characters except X
