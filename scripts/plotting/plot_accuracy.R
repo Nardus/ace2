@@ -83,10 +83,13 @@ overall_accuracies <- test_preds %>%
 # - Calculation confirmed by simulation
 null_accuracy <- prop_true^2 + (1-prop_true)^2 
 
+best_accuracy <- max(overall_accuracies$accuracy)
+
 # Plot
 p_overall <- ggplot(overall_accuracies, aes(x = run_label, y = accuracy)) +
+  geom_hline(yintercept = best_accuracy, linetype = 3, colour = "grey70") +
   geom_col(colour = "grey20", fill = "grey50") +
-  geom_errorbar(aes(ymin = lower, ymax = upper), colour = "grey20", width = 0.4) + 
+  geom_errorbar(aes(ymin = lower, ymax = upper), colour = "grey20", width = 0.4) +
   geom_hline(yintercept = null_accuracy, linetype = 2, colour = "grey10") +
   scale_y_continuous(limits = c(0, 1), expand = expansion(0.02)) +
   labs(y = "Accuracy") +
@@ -114,7 +117,10 @@ class_accuracies <- test_preds %>%
 sens <- class_accuracies %>% 
   filter(.data$label == "True")
 
+best_senstivity <- max(sens$accuracy)
+
 p_sens <- ggplot(sens, aes(x = run_label, y = accuracy, fill = label)) +
+  geom_hline(yintercept = best_senstivity, linetype = 3, colour = "grey70") +
   geom_col(colour = "grey20") +
   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
   geom_hline(yintercept = prop_true, linetype = 2, colour = "grey10") +
@@ -129,8 +135,11 @@ p_sens <- ggplot(sens, aes(x = run_label, y = accuracy, fill = label)) +
 # Specificity
 spec <- class_accuracies %>% 
   filter(.data$label == "False")
+  
+best_specificity <- max(spec$accuracy)
 
 p_spec <- ggplot(spec, aes(x = run_label, y = accuracy, fill = label)) +
+  geom_hline(yintercept = best_specificity, linetype = 3, colour = "grey70") +
   geom_col(colour = "grey20") +
   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, colour = "grey20") + 
   geom_hline(yintercept = 1-prop_true, linetype = 2, colour = "grey10") +
