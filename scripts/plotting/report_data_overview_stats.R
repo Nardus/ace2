@@ -16,19 +16,35 @@ infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")
 shedding_data <- readRDS("data/calculated/cleaned_shedding_data.rds")
 shedding_raw <- read_excel("data/internal/infection_data.xlsx")
 
+taxonomy <- readRDS("data/calculated/taxonomy.rds")
+mammals <- taxonomy %>% 
+  filter(.data$class == "Mammalia") %>% 
+  pull(.data$internal_name)
+
 # ---- Infection data ------------------------------------------------------------------------------
 # Overview
+cat("\n\n")
 sprintf("Infection data: %i susceptible, %i not susceptible",
         sum(infection_data$infected == "True"),
         sum(infection_data$infected == "False"))
 
-n_true <- sum(infection_data$infected == "True")
+# Percentages
+total <- binom.test(sum(infection_data$infected == "True"), nrow(infection_data))
+mammal_only <- binom.test(sum(infection_data$infected == "True" & infection_data$species %in% mammals),
+                          sum(infection_data$species %in% mammals))
 
-sprintf("%0.2f%% susceptible, (CI: %0.2f - %0.2f)",
-        n_true / nrow(infection_data) * 100,
-        binom.test(n_true, nrow(infection_data))$conf.int[1] * 100,
-        binom.test(n_true, nrow(infection_data))$conf.int[2] * 100)
+cat("\n")
+sprintf("In total %0.2f%% susceptible, (CI: %0.2f - %0.2f)",
+        total$estimate * 100,
+        total$conf.int[1] * 100,
+        total$conf.int[2] * 100)
 
+sprintf("Mammals only: %0.2f%% susceptible, (CI: %0.2f - %0.2f)",
+        mammal_only$estimate * 100,
+        mammal_only$conf.int[1] * 100,
+        mammal_only$conf.int[2] * 100)
+
+cat("\n")
 
 # Viruses
 # - Direct observations
@@ -62,7 +78,7 @@ sprintf("%i of %i hosts tested for >1 virus was susceptible for >1 virus", sum(c
 
 
 # Evidence levels
-print("Infection data by evidence level")
+print("Infection data by evidence level (all)")
 infection_data %>% 
   mutate(evidence_label = EVIDENCE_LABELS[.data$evidence_level]) %>% 
   group_by(.data$evidence_level, .data$evidence_label) %>% 
@@ -77,6 +93,24 @@ infection_data %>%
   select(-.data$evidence_level) %>% 
   print()
 
+cat("\n\n(mammals only)")
+infection_data %>% 
+  filter(species %in% mammals) %>% 
+  mutate(evidence_label = EVIDENCE_LABELS[.data$evidence_level]) %>% 
+  group_by(.data$evidence_level, .data$evidence_label) %>% 
+  summarise(N = n(),
+            Positive = sum(.data$infected == "True"),
+            Negative = sum(.data$infected == "False"),
+            .groups = "keep") %>% 
+  mutate(Proportion = .data$Positive/.data$N,
+         CI_lower = binom.test(.data$Positive, .data$N)$conf.int[1],
+         CI_upper = binom.test(.data$Positive, .data$N)$conf.int[2]) %>% 
+  ungroup() %>%
+  select(-.data$evidence_level) %>% 
+  print()
+
+
+cat("\n\n")
 
 # ---- Shedding data ------------------------------------------------------------------------------
 # RNA

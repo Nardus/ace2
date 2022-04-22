@@ -59,6 +59,8 @@ tree_taxonomy <- tree_taxonomy %>%
                                    internal_name == "Canis familiaris" ~ "Canis lupus",
                                    internal_name == "Neomonachus schauinslandi" ~ "Monachus schauinslandi",
                                    internal_name == "Neophocaena asiaeorientalis" ~ "Neophocaena phocaenoides",
+                                   internal_name == "Onychostruthus taczanowskii" ~ "Montifringilla taczanowskii",
+                                   internal_name == "Pyrgilauda ruficollis" ~ "Montifringilla ruficollis",
                                    TRUE ~ internal_name))
 
 

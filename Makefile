@@ -2,7 +2,9 @@
 
 .NOTPARALLEL:
 .PHONY: all
-all: plots
+all:	train \
+		report_data_overview \
+		plots
 
 
 # ---- Data ----------------------------------------------------------------------------------------
@@ -100,7 +102,7 @@ data/calculated/ace2_protein_alignment.fasta: data/external/ace2_protein_sequenc
 	mafft-einsi --thread 16 $< > $@
 
 # Phylogeny
-data/calculated/gene_tree/ace_genetree.treefile: data/calculated/ace2_protein_alignment.fasta
+data/calculated/gene_tree/ace2_genetree.treefile: data/calculated/ace2_protein_alignment.fasta
 	mkdir -p data/calculated/gene_tree
 	iqtree -nt 16 -s $< -bb 1000 -pre $(@D)/ace2_genetree
 
@@ -148,7 +150,8 @@ ALL_FEATURE_SETS =	--aa_categorical \
 output/all_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
-		--random_seed 77043274
+		--random_seed 77043274 \
+		--n_threads 20
 
 
 # ---- Training: individual feature sets ----------------------------------------------------------
@@ -156,43 +159,44 @@ output/all_data/%/aa_categorical/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_categorical \
 		--random_seed 45323357 \
-		--n_threads 10
+		--n_threads 20
 
 output/all_data/%/aa_distance/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_distance \
 		--random_seed 58498184 \
-		--n_threads 10
+		--n_threads 20
 
 output/all_data/%/aa_properties/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_properties \
 		--random_seed 54564253 \
-		--n_threads 10
+		--n_threads 20
 
 output/all_data/%/distance_to_humans/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--distance_to_humans \
 		--random_seed 75325883 \
-		--n_threads 10
+		--n_threads 20
 
 output/all_data/%/distance_to_positive/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--distance_to_positive \
 		--random_seed 18681045 \
-		--n_threads 10
+		--n_threads 20
 
 output/all_data/%/binding_affinity/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--binding_affinity \
-		--random_seed 11386168
+		--random_seed 11386168 \
+		--n_threads 20
 
 # Try timetree phylogeny as an alternative to ACE2 sequences:
 output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--phylogeny \
 		--random_seed 34264755 \
-		--n_threads 10
+		--n_threads 20
 
 # ---- Training: variations on best model ---------------------------------------------------------
 # Best ACE2 model restricted to S-binding sites only:
@@ -223,7 +227,8 @@ output/all_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENT
 	Rscript scripts/train_models.R $* $(@D) \
 		$(ALL_FEATURE_SETS) \
 		--phylogeny \
-		--random_seed 09524845
+		--random_seed 09524845 \
+		--n_threads 20
 
 
 # ---- Training on data subsets ------------------------------------------------------------------------------------
@@ -242,7 +247,8 @@ output/l2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS
 		$(ALL_FEATURE_SETS) \
 		--phylogeny \
 		--evidence_min 2 --evidence_max 2 \
-		--random_seed 23556284
+		--random_seed 23556284 \
+		--n_threads 20
 
 # - Level 3-4 (cell culture)
 output/l3+4_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
@@ -250,7 +256,8 @@ output/l3+4_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMEN
 		$(ALL_FEATURE_SETS) \
 		--phylogeny \
 		--evidence_min 3 --evidence_max 4 \
-		--random_seed 43564215
+		--random_seed 43564215 \
+		--n_threads 20
 
 # - Level 1 and 2 (i.e. exclude cell culture, in case it makes things worse)
 output/l1+2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
@@ -258,7 +265,30 @@ output/l1+2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMEN
 		$(ALL_FEATURE_SETS) \
 		--phylogeny \
 		--evidence_min 1 --evidence_max 2 \
-		--random_seed 28641685
+		--random_seed 28641685 \
+		--n_threads 20
+
+
+# ---- Train ensemble models ----------------------------------------------------------------------
+# All ACE2 + phylogeny
+output/all_data/%/ensemble_all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+																	output/all_data/%/all_features/predictions.rds \
+																	output/all_data/%/phylogeny/predictions.rds
+	Rscript scripts/train_ensemble.R \
+			--m1 output/all_data/$*/all_features \
+			--m2 output/all_data/$*/phylogeny \
+			--output_path $(@D) \
+			--random_seed 10012022
+
+# ACE2 distance and binding affinity
+output/all_data/%/ensemble_aa_distance_binding_affinity/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+																			output/all_data/%/aa_distance/predictions.rds \
+																			output/all_data/%/binding_affinity/predictions.rds
+	Rscript scripts/train_ensemble.R \
+			--m1 output/all_data/$*/aa_distance \
+			--m2 output/all_data/$*/binding_affinity \
+			--output_path $(@D) \
+			--random_seed 09524845
 
 
 # ---- Enemurate training combinations ------------------------------------------------------------
@@ -286,39 +316,36 @@ L1_L2_MODELS = $(patsubst %, output/%/all_features_phylogeny/predictions.rds, $(
 L3_MODELS = output/l3+4_data/infection/all_features_phylogeny/predictions.rds
 
 
+# Ensemble models
+ENSEMBLE_COMBINATIONS = ensemble_all_features_phylogeny \
+						ensemble_aa_distance_binding_affinity
+
+ENSEMBLE_FOLDERS =	$(foreach a,$(RESPONSE_VARS), \
+						$(foreach b,$(ENSEMBLE_COMBINATIONS), \
+							$(a)/$(b) ))
+
+ENSEMBLE_MODELS = $(patsubst %, output/all_data/%/predictions.rds, $(ENSEMBLE_FOLDERS))
+
+
+# Other models (used for checks / supplementary plots)
+OTHER_MODELS =	output/all_data/infection/aa_distance_phylogeny/predictions.rds \
+				output/all_data/infection/_supplementary_runs/aa_distance_s_binding/predictions.rds \
+				
+
 # Shortcuts:
 .PHONY: train_feature_subsets train_data_subsets train
 train_feature_subsets: $(FEATURE_MODELS) $(PHYLO_MODELS)
 train_data_subsets: $(L1_L2_MODELS) $(L3_MODELS)
 
 train:	train_feature_subsets \
-		train_data_subsets
+		train_data_subsets \
+		$(ENSEMBLE_MODELS) \
+		$(OTHER_MODELS)
+		
 
 # Fitted models should never be deleted (even when produced as an intermediate file
 # for another step):
-.PRECIOUS: $(FEATURE_MODELS) $(PHYLO_MODELS) $(L1_L2_MODELS) $(L3_MODELS)
-
-
-# ---- Train ensemble models ----------------------------------------------------------------------
-# All ACE2 + phylogeny
-output/all_data/%/ensemble_all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-																	output/all_data/%/all_features/predictions.rds \
-																	output/all_data/%/phylogeny/predictions.rds
-	Rscript scripts/train_ensemble.R \
-			--m1 output/all_data/$*/all_features \
-			--m2 output/all_data/$*/phylogeny \
-			--output_path $(@D) \
-			--random_seed 10012022
-
-# ACE2 distance and binding affinity
-output/all_data/%/ensemble_aa_distance_binding_affinity/predictions.rds:	$(TRAINING_REQUIREMENTS) \
-																			output/all_data/%/aa_distance/predictions.rds \
-																			output/all_data/%/binding_affinity/predictions.rds
-	Rscript scripts/train_ensemble.R \
-			--m1 output/all_data/$*/aa_distance \
-			--m2 output/all_data/$*/binding_affinity \
-			--output_path $(@D) \
-			--random_seed 09524845
+.PRECIOUS: $(FEATURE_MODELS) $(PHYLO_MODELS) $(L1_L2_MODELS) $(L3_MODELS) $(OTHER_MODELS)
 
 
 # ---- Predict other species for which ACE2 sequences are available --------------------------------
@@ -333,16 +360,22 @@ output/all_data/infection/all_features/holdout_predictions.rds: output/all_data/
 
 # ---- Plots ---------------------------------------------------------------------------------------
 # Diagnostic plots
-output/plots/performance.png: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS) \
-								output/all_data/infection/ensemble_all_features_phylogeny/predictions.rds
+output/plots/performance.png: $(FEATURE_MODELS) $(L1_L2_MODELS) $(L3_MODELS) $(ENSEMBLE_MODELS)
 	Rscript scripts/plotting/plot_performance_diagnostics.R
 
 # Data overview plots
-.PHONY: report_data_overview
+.PHONY: report_data_overview report_distance_metric_correlation
 report_data_overview:	data/internal/infection_data.xlsx \
 						data/calculated/cleaned_infection_data.rds \
 						data/calculated/cleaned_shedding_data.rds
 	Rscript scripts/plotting/report_data_overview_stats.R
+
+report_distance_metric_correlation: data/calculated/cleaned_infection_data.rds \
+									data/internal/timetree_amniota.nwk\
+									data/calculated/features_pairwise_dists.rds \
+									data/internal/NCBI_ACE2_orthologs.csv \
+									data/internal/ace2_accessions.csv
+	Rscript scripts/plotting/report_distance_metric_correlation.R
 
 output/plots/raw_data_overview.pdf: data/internal/timetree_amniota.nwk \
 									data/calculated/cleaned_infection_data.rds \
@@ -356,7 +389,8 @@ output/plots/raw_data_overview.pdf: data/internal/timetree_amniota.nwk \
 output/plots/phylogeny_congruence.pdf:	data/internal/timetree_amniota.nwk \
 										data/internal/ace2_accessions.csv \
 										data/internal/NCBI_ACE2_orthologs.csv \
-										data/calculated/features_pairwise_dists.rds
+										data/calculated/features_pairwise_dists.rds \
+										data/calculated/gene_tree/ace2_genetree.treefile
 	Rscript scripts/plotting/plot_phylogeny_congruence.R
 
 
@@ -401,12 +435,12 @@ output/plots/intermediates/feature_clusters.rds: data/calculated/features_variab
 	Rscript scripts/plotting/get_clustered_sites.R
 
 # - Plot
-output/plots/varimp_overview.pdf:	output/all_data/infection/all_features/feature_importance.rds \
+output/plots/varimp_overview.pdf:	output/all_data/infection/all_features/predictions.rds \
 									output/plots/intermediates/feature_clusters.rds
-	Rscript scripts/plotting/plot_varimp_overview.R $< $@
+	Rscript scripts/plotting/plot_varimp_overview.R $(dir $<)/feature_importance.rds $@
 
 
-output/plots/site_varimp_supplement.pdf:	output/all_data/infection/aa_distance/feature_importance.rds \
+output/plots/site_varimp_supplement.pdf:	output/all_data/infection/aa_distance/predictions.rds \
 											output/plots/intermediates/feature_clusters.rds
 	Rscript scripts/plotting/plot_site_varimp_supplement.R
 
@@ -493,10 +527,26 @@ output/si_tables/supplement_training_data.xlsx: data/internal/infection_data.xls
 	Rscript scripts/plotting/make_supplementary_tables.R
 
 
+# Make all plots
 .PHONY: plots
 plots: 	report_data_overview \
+		report_distance_metric_correlation \
 		output/plots/raw_data_overview.pdf \
 		output/plots/phylogeny_congruence.pdf \
 		output/plots/accuracy.pdf \
+		output/plots/accuracy_supplement_sbinding.pdf \
+		output/plots/accuracy_shedding.pdf \
 		output/plots/accuracy_data_subsets.pdf \
-		output/plots/varimp_overview.pdf
+		output/plots/accuracy_non_ace2_all_features.pdf \
+		output/plots/accuracy_non_ace2_phylogeny.pdf \
+		output/plots/varimp_overview.pdf \
+		output/plots/site_varimp_supplement.pdf \
+		output/plots/existing_predictions.pdf \
+		output/plots/existing_predictions_supplement.pdf \
+		output/plots/predictions_by_order_supplement.pdf \
+		output/plots/predictions_by_family_supplement.pdf \
+		output/plots/prediction_maps.png \
+		output/plots/ace2_availability_map_supplement.png \
+		output/plots/prediction_maps_by_order.png \
+		output/plots/phylogeny_predictions_supplement.pdf \
+		output/si_tables/supplement_training_data.xlsx

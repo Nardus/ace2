@@ -234,6 +234,12 @@ cat(sprintf("\n%3.3f%% of mammals amd %3.3f%% of birds in current data are susce
 ensemble_predictions <- read_rds("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
 phylogeny_predictions <- read_rds("output/all_data/infection/phylogeny/holdout_predictions.rds")
 
+# Overall
+cat(sprintf("Ensemble predicts %.1f%% of all species susceptible, phylogeny only %.1f%%\n\n",
+            sum(ensemble_predictions$predicted_label == "True") / nrow(ensemble_predictions) * 100,
+            sum(phylogeny_predictions$predicted_label == "True") / nrow(phylogeny_predictions) * 100))
+
+# Separated for mammals / birds
 get_stats <- function(predictions, class_label) {
   pred_positive <- sum(predictions$predicted_label == "True" & predictions$class == class_label)
   n <- sum(predictions$class == class_label)

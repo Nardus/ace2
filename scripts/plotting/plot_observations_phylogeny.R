@@ -391,7 +391,7 @@ cat("\n")
 
 # Calculate Pagel's lambda for ACE2 phylogeny
 # - Correct labels in ACE2 tree
-ace2_tree <- read.tree("data/calculated/gene_tree/ace_genetree.treefile")
+ace2_tree <- read.tree("data/calculated/gene_tree/ace2_genetree.treefile")
 
 internal_metadata <- internal_metadata %>% 
   filter(.data$ace2_accession != "")

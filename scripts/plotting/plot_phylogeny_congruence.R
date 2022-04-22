@@ -9,6 +9,7 @@ suppressPackageStartupMessages({
   library(phytools)
   library(dendextend)
   library(phylogram)  # Phylogram MUST be loaded after dendextend for as.dendrogram.phylo to work
+  library(vegan)
   library(parallel)
   library(ggplot2)
   library(grid)
@@ -21,7 +22,7 @@ N_CORES <- 20
 
 # Phylogenies
 time_tree <- read.tree("data/internal/timetree_amniota.nwk")
-ace2_tree <- read.tree("data/calculated/gene_tree/ace_genetree.treefile")
+ace2_tree <- read.tree("data/calculated/gene_tree/ace2_genetree.treefile")
 
 # Metadata:
 ncbi_metadata <- read.csv("data/internal/NCBI_ACE2_orthologs.csv") %>% 
@@ -101,28 +102,42 @@ cat(sprintf("\n\nBaker's gamma: %3.3f, exact p-value from permutation test: %s\n
 
 
 # ---- Correlation in pairwise phylogenetic distances ----------------------------------------------
-ace2_dists <- cophenetic(ace2_tree) %>% 
+# Mantel test
+ace2_dists <- cophenetic(ace2_tree)
+time_dists <- cophenetic(time_tree)
+
+time_dists <- time_dists[rownames(ace2_dists), colnames(ace2_dists)]  # test below ignores names
+
+mantel_result <- mantel(ace2_dists, time_dists, method = "spearman", permutations = n_sims)#, parallel = N_CORES)
+
+mantel_label <- if_else(mantel_result$signif < 0.001, 
+                        "< 0.001", 
+                        sprintf("%1.3f", mantel_result$signif))
+
+mantel_label <- sprintf("Spearman correlation = %1.3f\nMantel test p-value %s", 
+                        mantel_result$statistic, mantel_label)
+
+# Plot
+ace2_dist_df <- ace2_dists %>% 
   data.frame() %>% 
   rownames_to_column("from_species") %>% 
   pivot_longer(-.data$from_species, names_to = "to_species", values_to = "ace2_distance")
 
-time_dists <- cophenetic(time_tree) %>% 
+time_dist_df <- time_dists %>% 
   data.frame() %>% 
   rownames_to_column("from_species") %>% 
   pivot_longer(-.data$from_species, names_to = "to_species", values_to = "time_distance")
 
-combined_dists <- ace2_dists %>% 
-  full_join(time_dists, by = c("from_species", "to_species"))
+combined_dists <- ace2_dist_df %>% 
+  full_join(time_dist_df, by = c("from_species", "to_species"))
 
 dist_plot <- ggplot(combined_dists, aes(x = time_distance, y = ace2_distance)) +
   geom_point(colour = "grey70", size = 0.8) +
   geom_smooth(method = "lm", colour = TRENDLINE_COLOUR) +
+  geom_text(label = mantel_label, x = 0, y = 1.1, size = 2, hjust = 0,
+            colour = "grey20", data = data.frame(1)) +
   labs(x = "Phylogenetic distance (timetree)",
        y = "Phylogenetic distance (ACE2 phylogeny)")
-
-cat(sprintf("\nSpearman correlation in phylogenetic distances: %3.3f\n", 
-            cor(combined_dists$ace2_distance, combined_dists$time_distance,
-                method = "spearman")))
 
 
 # ---- Tanglegram ----------------------------------------------------------------------------------

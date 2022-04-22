@@ -121,3 +121,9 @@ top_species %>%
            .data$proportion_pred_susceptible, 
            .data$proportion_known_susceptible) %>% 
     print()
+
+cat("\nAt the optimized cutoff, ", 
+    sum(all_predictions$predicted_label == "True"), 
+    "species are predicted as susceptible, of which",
+    sum(mammal_predictions$predicted_label == "True"),
+    "are mammals\n\n")

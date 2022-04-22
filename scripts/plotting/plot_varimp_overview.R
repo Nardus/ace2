@@ -168,8 +168,13 @@ print(table(top_importance$feature_type))
 cat("Site-specific features represent", n_distinct(site_labels$site_label), "amino acid positions\n")
 
 # S-interacting sites
-cat(sum(top_importance$feature_position_corrected %in% ALL_S_BINDING_INDS),
-    "included sites are known to interact with S\n")
+s_interacting_inds = top_importance$feature_position_corrected %in% ALL_S_BINDING_INDS
+cat(
+  sum(s_interacting_inds),
+  "included sites are known to interact with S (",
+  top_importance$feature_position_corrected[s_interacting_inds],
+  ")\n"
+)
 
 # Expected ratio
 s_clusters <- feature_clusters %>% 

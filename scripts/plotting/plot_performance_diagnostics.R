@@ -23,15 +23,18 @@ infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")
 
 
 # ---- Plotting order ------------------------------------------------------------------------------
-# TODO: clean labels for each run_id...
-
 RUN_ORDER <- c("aa_categorical",
                "aa_properties", 
                "aa_distance",
                "distance_to_humans",
                "distance_to_positive",
                "binding_affinity",
-               "all_features")
+               "all_features",
+               "phylogeny",
+               "aa_distance_phylogeny",
+               "all_features_phylogeny",
+               "ensemble_all_features_phylogeny",
+               "ensemble_aa_distance_binding_affinity")
 
 test_preds <- test_preds %>% 
   mutate(run_id = factor(.data$run_id, levels = RUN_ORDER))
@@ -144,21 +147,13 @@ ggsave2("output/plots/performance.png",
 
 # ---- Stats to quote in text ---------------------------------------------------------------------
 # Does including cell culture data make the model less reliable?
+cat("\n\nPerformance when removing cell culture data:\n")
+
 test_preds %>% 
   filter(.data$dataset %in% c("all_data", "l1+2_data")) %>% 
   filter(.data$response_var == "Infection") %>% 
-  filter(.data$run_id == "combined") %>% 
+  filter(.data$run_id == "all_features") %>% 
   group_by(.data$dataset, .data$response_var, .data$run_id, .data$label) %>% 
-  summarise(n = n(),
-            accuracy = sum(.data$label == .data$prediction) / n(),
-            .groups = "drop")
-
-
-test_preds %>% 
-  filter(.data$dataset %in% c("all_data", "l1+2_data")) %>% 
-  filter(.data$response_var == "Infection") %>% 
-  filter(.data$run_id == "combined") %>% 
-  group_by(.data$dataset, .data$response_var, .data$run_id, .data$label, .data$evidence_level) %>% 
   summarise(n = n(),
             accuracy = sum(.data$label == .data$prediction) / n(),
             .groups = "drop")

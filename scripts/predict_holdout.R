@@ -39,7 +39,7 @@ additional_metadata <- read_csv("data/internal/NCBI_ACE2_orthologs.csv",
   filter(!.data$species %in% training_metadata$species & 
            !.data$ace2_accession %in% training_metadata$ace2_accession) %>% 
   distinct(.data$species, .data$ace2_accession) %>% 
-  filter(!.data$ace2_accession %in% c("XP_006194263.1"))  # Remove duplicate for wild camels
+  filter(!.data$ace2_accession %in% c("XP_006194263.1", "XP_039729365.1"))  # Remove duplicate for wild camels and Pteropus vampyrus
 
 final_metadata <- training_metadata %>% 
   bind_rows(additional_metadata) %>% 
