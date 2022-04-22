@@ -122,17 +122,20 @@ plot_data_panel <- function(response_data, virus_data, label_var) {
     mutate(x_offset = case_when(.data$virus == "SARS-CoV" ~ -0.22,
                                 .data$virus == "SARS-CoV-2" ~ 0,
                                 .data$virus == "Other sarbecovirus" ~ +0.22),
-           x_pos = as.numeric(.data$label) + .data$x_offset)
+           x_pos = as.numeric(.data$label) + .data$x_offset,
+           label_colour = if_else(.data$evidence_level == "Observed infection",
+                                  "light",
+                                  "dark"))
   
   ggplot(response_data, aes(x = label, y = species, fill = evidence_level)) +
     geom_tile() +
-    geom_point(aes(x = x_pos, shape = virus), size = 0.9, colour = "grey30", virus_data) +
-    
-    scale_fill_brewer(palette = "YlGnBu", direction = - 1, guide = guide_legend(order = 1), drop = FALSE) +
+    geom_point(aes(x = x_pos, shape = virus, colour = label_colour), size = 0.9, data=virus_data) +
+    scale_fill_brewer(palette = "YlGnBu", direction = -1, guide = guide_legend(order = 1), drop = FALSE) +
     scale_shape_manual(values = VIRUS_SHAPES, guide = guide_legend(order = 2), drop = FALSE) +
+    scale_colour_manual(values = c(light = "grey60", dark = "grey30"), guide = "none", drop = FALSE) +
     scale_x_discrete(expand = expansion(add = 0)) +
     scale_y_discrete(expand = expansion(add = 0.5), drop = FALSE, position = "right") +
-    theme(legend.position="none",
+    theme(legend.position = "none",
           panel.grid.major.y = element_line(colour = "grey92"),
           axis.title.y = element_blank())
 }
@@ -250,7 +253,7 @@ lambda_plot <- ggplot(lambdas, aes(x = max_evidence, y = lambda, group = label))
   scale_shape_manual(values = c("TRUE" = 1, "FALSE" = 4),
                      labels = c("TRUE" = "True", "FALSE" = "False"),
                      guide = "none") +
-  labs(x = "Evidence used", y = expression("Pagel's"~lambda),
+  labs(x = "Dataset combination used", y = expression("Pagel's"~lambda),
        colour = NULL, shape = "p-value < 0.01") +
   theme(legend.position = c(0.75, 0.3),
         axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
@@ -324,16 +327,16 @@ plot_dists2 <- function(y_var, test_position,
 }
 
 # - Phylogenetic clustering
-phylo_pos_plot <- plot_dists2("closest_pos_phylo", test_position = 630) +
-  scale_y_continuous(limits = c(0, 700), expand = expansion(add = 20)) +
+phylo_pos_plot <- plot_dists2("closest_pos_phylo", test_position = 3) +
+  scale_y_log10(limits = c(0.5, 2000)) +
   labs(x = "Infected", y = "Phylogenetic distance\nto closest infected\nneighbour (My)") + 
   theme(legend.position = "none",
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
         plot.margin = margin(t = 5.5, r = 5.5, b = 0, l = 5.5))
 
-phylo_neg_plot <- plot_dists2("closest_neg_phylo", test_position = 630) +
-  scale_y_continuous(limits = c(0, 700), expand = expansion(add = 20)) +
+phylo_neg_plot <- plot_dists2("closest_neg_phylo", test_position = 3) +
+  scale_y_log10(limits = c(0.5, 2000)) +
   labs(x = "Infected", y = "Phylogenetic distance\nto closest non-infected\nneighbour (My)", 
        fill = "Best evidence") + 
   theme(legend.position = "none",

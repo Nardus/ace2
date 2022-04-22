@@ -37,6 +37,9 @@ vignettes/*.pdf
 .Rproj.user
 *.Rproj
 
+# For development only:
+dev_environment.yml
+
 # Generated files, etc.
 /D_Keen_MSC/
 /_exploratory/
