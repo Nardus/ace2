@@ -436,13 +436,14 @@ output/plots/intermediates/feature_clusters.rds: data/calculated/features_variab
 
 # - Plot
 output/plots/varimp_overview.pdf:	output/all_data/infection/all_features/predictions.rds \
+									output/all_data/infection/aa_distance/predictions.rds \
 									output/plots/intermediates/feature_clusters.rds
-	Rscript scripts/plotting/plot_varimp_overview.R $(dir $<)/feature_importance.rds $@
+	Rscript scripts/plotting/plot_varimp_overview.R
 
 
-output/plots/site_varimp_supplement.pdf:	output/all_data/infection/aa_distance/predictions.rds \
-											output/plots/intermediates/feature_clusters.rds
-	Rscript scripts/plotting/plot_site_varimp_supplement.R
+output/plots/varimp_supplement.pdf: output/all_data/infection/all_features/predictions.rds \
+									output/plots/intermediates/feature_clusters.rds
+	Rscript scripts/plotting/plot_varimp_supplement.R
 
 
 # Predictions:
@@ -540,7 +541,7 @@ plots: 	report_data_overview \
 		output/plots/accuracy_non_ace2_all_features.pdf \
 		output/plots/accuracy_non_ace2_phylogeny.pdf \
 		output/plots/varimp_overview.pdf \
-		output/plots/site_varimp_supplement.pdf \
+		output/plots/varimp_supplement.pdf \
 		output/plots/existing_predictions.pdf \
 		output/plots/existing_predictions_supplement.pdf \
 		output/plots/predictions_by_order_supplement.pdf \
