@@ -107,7 +107,9 @@ study_label_df <- all_predictions %>%
                                .data$study_label),
          study_label = str_to_sentence(.data$study_label),
          study_label = str_replace(.data$study_label, "([[:digit:]]{4})[[:alpha:]]*$", " *et al.*, \\1"),
-         study_label_long = paste0(.data$study_label, "<br/>(", .data$predictor, ")"))
+         study_label_long = paste0(.data$study_label, "<br/>(", .data$predictor, ")"),
+         study_label_long = if_else(.data$study_label_long == "**This study**<br/>(All ACE2 representations)", 
+                                     "**This study** (All ACE2<br/>representations)", .data$study_label_long))
 
 study_labels <- study_label_df$study_label_long
 names(study_labels) <- as.character(study_label_df$citation_key)
@@ -163,8 +165,13 @@ fit_labels <- data_predictions %>%
   group_by(.data$citation_key) %>% 
   summarise(n_species = n(),
             .groups = "drop") %>% 
-  mutate(study_label = str_to_sentence(.data$citation_key),
+  mutate(study_label = if_else(!startsWith(.data$citation_key, "This study"),
+                               str_to_sentence(.data$citation_key),
+                               .data$citation_key),
          study_label = str_replace(.data$study_label, "([[:digit:]]{4})[[:alpha:]]*$", " *et al.*, \\1"),
+         study_label = str_replace(.data$study_label, "This study \\(([[:alnum:] ]*)\\)", "**\\1**"),
+         study_label = str_replace(.data$study_label, "host phylogeny", "Host phylogeny"),
+         study_label = str_replace(.data$study_label, "All ACE2 representations", "All ACE2<br>representations"),
          final_label = str_glue("{study_label}<br/>(N={n_species})"))
 
 fit_label_vec = as.character(fit_labels$final_label)

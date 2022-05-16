@@ -14,7 +14,7 @@ suppressPackageStartupMessages({
 
 infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")
 shedding_data <- readRDS("data/calculated/cleaned_shedding_data.rds")
-shedding_raw <- read_excel("data/internal/infection_data.xlsx")
+raw_data <- read_excel("data/internal/infection_data.xlsx")
 
 taxonomy <- readRDS("data/calculated/taxonomy.rds")
 mammals <- taxonomy %>% 
@@ -110,11 +110,40 @@ infection_data %>%
   print()
 
 
+# Hosts infected by ACE2-utilizing sarbecoviruses
+cat("\n\nACE2-utilization:\n")
+ace2_viruses <- c("SARS-CoV-2", "SARS-CoV-1", "ACE2-utilizing SARS-like CoV")
+
+cat("Overall:\n")
+ace2_used <- raw_data %>%
+  group_by(.data$species) %>%
+  summarise(ACE2_used = any(.data$virus_name %in% ace2_viruses))
+
+sprintf("%i of %i all hosts (%.3f%%) are known to use ACE2",
+        sum(ace2_used$ACE2_used),
+        nrow(ace2_used),
+        sum(ace2_used$ACE2_used) / nrow(ace2_used) * 100)
+
+cat("Susceptible:\n")
+susceptible_spp <- infection_data %>%
+  filter(.data$infected == "True") %>%
+  pull(.data$species)
+
+ace2_used <- raw_data %>%
+  filter(.data$species %in% susceptible_spp) %>%
+  group_by(.data$species) %>%
+  summarise(ACE2_used = any(.data$virus_name %in% ace2_viruses))
+
+sprintf("%i of %i susceptible hosts (%.3f%%) are known to use ACE2",
+        sum(ace2_used$ACE2_used),
+        nrow(ace2_used),
+        sum(ace2_used$ACE2_used) / nrow(ace2_used) * 100)
+
 cat("\n\n")
 
 # ---- Shedding data ------------------------------------------------------------------------------
 # RNA
-rna_shedding <- shedding_raw %>% 
+rna_shedding <- raw_data %>% 
   group_by(.data$species) %>% 
   summarise(data_reported = any(!is.na(.data$shedding_rna)),
             shedding_rna = any(.data$shedding_rna == 1, na.rm = TRUE))

@@ -20,7 +20,7 @@ suppressPackageStartupMessages({
 
 
 # ---- Data ----------------------------------------------------------------------------------------
-ensemble_predictions <- readRDS("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
+ensemble_predictions <- readRDS("output/all_data/infection/ensemble_aa_distance_self/holdout_predictions.rds")
 phylogeny_predictions <- readRDS("output/all_data/infection/phylogeny/holdout_predictions.rds")
 
 infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")
@@ -52,10 +52,10 @@ stopifnot(all(plot_orders %in% taxonomy_table$order))  # Check spelling
 
 # ---- Merge data ----------------------------------------------------------------------------------
 ensemble_predictions <- ensemble_predictions %>% 
-  mutate(run_label = "ACE2 / phylogeny ensemble")
+  mutate(run_label = "ACE2 ensemble")
 
 phylogeny_predictions <- phylogeny_predictions %>% 
-  mutate(run_label = "Phylogeny-only")
+  mutate(run_label = "Host phylogeny")
 
 infection_data <- infection_data %>% 
   mutate(run_label = "Observed",
@@ -65,8 +65,8 @@ infection_data <- infection_data %>%
 all_predictions <- bind_rows(ensemble_predictions, phylogeny_predictions, infection_data) %>% 
   mutate(run_label = factor(.data$run_label, 
                             levels = c("Observed",
-                                       "ACE2 / phylogeny ensemble", 
-                                       "Phylogeny-only"))) %>% 
+                                       "ACE2 ensemble", 
+                                       "Host phylogeny"))) %>% 
   left_join(taxonomy_table, by = c("species" = "internal_name")) %>% 
   filter(!is.na(.data$class)) %>% 
   filter(!is.na(.data$order)) %>% 

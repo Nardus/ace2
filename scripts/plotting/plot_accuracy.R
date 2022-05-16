@@ -49,11 +49,13 @@ RUN_LABELS <- c("aa_categorical" = "AA categorical",
                 "all_features" = "All ACE2 representations\ncombined",
                 "all_features_phylogeny" = "All ACE2 representations +\nphylogenetic eigenvectors",
                 "aa_distance_phylogeny" = "AA consensus distance + \nphylogenetic eigenvectors",
-                "ensemble_all_features_phylogeny" = "ACE2 / phylogeny\nensemble",
-                "ensemble_aa_distance_binding_affinity" = "AA distance / binding affinity\nensemble")
+                "ensemble_all_features_phylogeny" = "All ACE2 representations /\nphylogeny ensemble",
+                "ensemble_aa_distance_binding_affinity" = "AA consensus distance /\nbinding affinity ensemble",
+                "ensemble_aa_distance_self" = "AA consensus distance / AA\nconsensus distance ensemble")
 
 phylo_runs <- c("phylogeny", "all_features_phylogeny", "aa_distance_phylogeny")
-ensemble_runs <- c("ensemble_all_features_phylogeny", "ensemble_aa_distance_binding_affinity")
+ensemble_runs <- c("ensemble_all_features_phylogeny", "ensemble_aa_distance_binding_affinity", 
+                   "ensemble_aa_distance_self")
 
 test_preds <- test_preds %>% 
   mutate(run_label = factor(.data$run_id, labels = RUN_LABELS, levels = names(RUN_LABELS)),
@@ -160,7 +162,7 @@ p_combined <- plot_grid(p_sens, p_spec, p_overall,
                         align = "h", axis = "tb")
 
 ggsave2(INPUT$output_name, p_combined, 
-        width = 7, height = 3)
+        width = 7, height = 3.2)
 
 
 # ---- Values quoted in text -----------------------------------------------------------------------

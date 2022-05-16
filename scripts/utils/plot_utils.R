@@ -54,7 +54,7 @@ add_readable_feature_names <- function(x) {
                                   TRUE ~ NA_character_),
            feature_position = if_else(.data$feature_type %in% c("Consensus distance", "Amino acid identity",
                                                                 "Polarity", "Hydrophobicity", "Volume"),
-                                      str_extract(.data$feature, "[[:digit:]]+$"), 
+                                      str_extract(.data$feature, "[[:digit:]]+"), 
                                       NA_character_),
            feature_position = as.integer(.data$feature_position),
            feature_position_corrected = as_human_coord_v(.data$feature_position),

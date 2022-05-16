@@ -166,6 +166,12 @@ output/all_data/%/aa_distance/predictions.rds: $(TRAINING_REQUIREMENTS)
 		--aa_distance \
 		--random_seed 58498184 \
 		--n_threads 20
+		
+output/all_data/%/_aa_distance2/predictions.rds: $(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--aa_distance \
+		--random_seed 98503201 \
+		--n_threads 20
 
 output/all_data/%/aa_properties/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
@@ -198,7 +204,7 @@ output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 		--random_seed 34264755 \
 		--n_threads 20
 
-# ---- Training: variations on best model ---------------------------------------------------------
+# ---- Training: variations on best models --------------------------------------------------------
 # Best ACE2 model restricted to S-binding sites only:
 output/all_data/%/_supplementary_runs/aa_distance_s_binding/predictions.rds:	$(TRAINING_REQUIREMENTS) \
 																				data/calculated/s_binding_alignment_positions.rds
@@ -233,10 +239,6 @@ output/all_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENT
 
 # ---- Training on data subsets ------------------------------------------------------------------------------------
 # As above, output format is "dataset/response_var/feature_set/*"
-# - All data models already trained during feature selection
-
-# TODO: reduce number of features below
-
 # All feature sets on data from each evidence level:
 #  (note that level 1 [natural infection observed] has no negative data, so 
 #  can't be included separately here)
@@ -290,6 +292,16 @@ output/all_data/%/ensemble_aa_distance_binding_affinity/predictions.rds:	$(TRAIN
 			--output_path $(@D) \
 			--random_seed 09524845
 
+# ACE2 distance with another version of itself (differing only in random seed)
+output/all_data/%/ensemble_aa_distance_self/predictions.rds:	$(TRAINING_REQUIREMENTS) \
+																output/all_data/%/aa_distance/predictions.rds \
+																output/all_data/%/_aa_distance2/predictions.rds
+	Rscript scripts/train_ensemble.R \
+			--m1 output/all_data/$*/aa_distance \
+			--m2 output/all_data/$*/_aa_distance2 \
+			--output_path $(@D) \
+			--random_seed 09524845
+
 
 # ---- Enemurate training combinations ------------------------------------------------------------
 # Feature subsets
@@ -318,7 +330,8 @@ L3_MODELS = output/l3+4_data/infection/all_features_phylogeny/predictions.rds
 
 # Ensemble models
 ENSEMBLE_COMBINATIONS = ensemble_all_features_phylogeny \
-						ensemble_aa_distance_binding_affinity
+						ensemble_aa_distance_binding_affinity \
+						ensemble_aa_distance_self
 
 ENSEMBLE_FOLDERS =	$(foreach a,$(RESPONSE_VARS), \
 						$(foreach b,$(ENSEMBLE_COMBINATIONS), \
@@ -349,12 +362,14 @@ train:	train_feature_subsets \
 
 
 # ---- Predict other species for which ACE2 sequences are available --------------------------------
-# Phylogeny model predictions will be made simultaneously
-output/all_data/infection/all_features/holdout_predictions.rds: output/all_data/infection/all_features/predictions.rds \
-																data/calculated/cleaned_infection_data.rds \
-																data/internal/NCBI_ACE2_orthologs.csv \
-																data/calculated/taxonomy.rds \
-																$(TRAINING_REQUIREMENTS)
+# Phylogeny and ensemble model predictions will be made simultaneously
+output/all_data/infection/aa_distance/holdout_predictions.rds: output/all_data/infection/aa_distance/predictions.rds \
+															   output/all_data/infection/ensemble_aa_distance_self/predictions.rds \
+															   output/all_data/infection/phylogeny/predictions.rds \
+															   data/calculated/cleaned_infection_data.rds \
+															   data/internal/NCBI_ACE2_orthologs.csv \
+															   data/calculated/taxonomy.rds \
+															   $(TRAINING_REQUIREMENTS)
 	Rscript scripts/predict_holdout.R
 
 
@@ -401,7 +416,8 @@ output/plots/accuracy.pdf:	$(FEATURE_MODELS) \
 							output/all_data/infection/all_features_phylogeny/predictions.rds \
 							output/all_data/infection/aa_distance_phylogeny/predictions.rds \
 							output/all_data/infection/ensemble_all_features_phylogeny/predictions.rds \
-							output/all_data/infection/ensemble_aa_distance_binding_affinity/predictions.rds
+							output/all_data/infection/ensemble_aa_distance_binding_affinity/predictions.rds \
+							output/all_data/infection/ensemble_aa_distance_self/predictions.rds 
 	Rscript scripts/plotting/plot_accuracy.R infection $@
 
 # - Supplement (S-binding only)
@@ -449,16 +465,16 @@ output/plots/varimp_supplement.pdf: output/all_data/infection/all_features/predi
 # Predictions:
 # - Comparison to existing predictions
 output/plots/intermediates/prediction_dendrogram.rds: 	data/internal/existing_predictions.csv \
-														output/all_data/infection/all_features/predictions.rds \
-														output/all_data/infection/phylogeny/predictions.rds \
-														output/all_data/infection/all_features/holdout_predictions.rds
+														output/all_data/infection/aa_distance/holdout_predictions.rds
 	Rscript scripts/plotting/get_prediction_dendrogram.R
 
 
-output/plots/existing_predictions.pdf:	data/internal/timetree_amniota.nwk \
-										output/plots/raw_data_overview.pdf \
+output/plots/existing_predictions.pdf:	output/plots/raw_data_overview.pdf \
 										data/internal/existing_predictions.csv \
-										output/all_data/infection/all_features/holdout_predictions.rds
+										output/plots/intermediates/prediction_dendrogram.rds \
+										output/all_data/infection/aa_distance/predictions.rds \
+										output/all_data/infection/phylogeny/predictions.rds \
+										output/all_data/infection/ensemble_aa_distance_self/predictions.rds
 	Rscript scripts/plotting/plot_existing_predictions.R
 
 
@@ -471,38 +487,28 @@ output/plots/existing_predictions_supplement.pdf:	data/internal/timetree_amniota
 
 
 # - Prediction overview (phylogeny)
-output/plots/predictions_by_order_supplement.pdf:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
-													output/all_data/infection/phylogeny/holdout_predictions.rds \
+output/plots/predictions_by_order_supplement.pdf:	output/all_data/infection/aa_distance/holdout_predictions.rds \
 													data/calculated/cleaned_infection_data.rds \
 													data/calculated/taxonomy.rds \
 													data/internal/timetree_amniota.nwk
 	Rscript scripts/plotting/plot_predictions_by_order.R
 
-output/plots/predictions_by_family_supplement.pdf:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
-													output/all_data/infection/phylogeny/holdout_predictions.rds \
+output/plots/predictions_by_family_supplement.pdf:	output/all_data/infection/aa_distance/holdout_predictions.rds \
 													data/calculated/cleaned_infection_data.rds \
 													data/calculated/taxonomy.rds
 	Rscript scripts/plotting/plot_predictions_by_family.R
 
 # - Maps
-output/plots/prediction_maps.png:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
-									output/all_data/infection/phylogeny/holdout_predictions.rds \
+output/plots/prediction_maps.png:	output/all_data/infection/aa_distance/holdout_predictions.rds \
 									data/internal/timetree_mammalia.nwk \
 									data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
 									data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
 									data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
-									output/all_data/infection/all_features/holdout_predictions.rds \
 									data/calculated/taxonomy.rds
 	Rscript scripts/plotting/plot_prediction_maps.R
 
-output/plots/ace2_availability_map_supplement.png:	output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
-													data/external/iucn_base/Land_Masses_and_Ocean_Islands.shp \
-													data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp \
-													data/iucn_range_maps/MAMMALS_FRESHWATER.shp \
-													data/calculated/taxonomy.rds
-	Rscript scripts/plotting/plot_ace2_availability_map_supplement.R
 
-output/plots/prediction_maps_by_order.png:	output/all_data/infection/phylogeny/holdout_predictions.rds \
+output/plots/prediction_maps_by_order.png:	output/all_data/infection/aa_distance/holdout_predictions.rds \
 											data/calculated/cleaned_infection_data.rds \
 											data/calculated/taxonomy.rds \
 											data/iucn_range_maps/MAMMALS_TERRESTRIAL_ONLY.shp
@@ -510,8 +516,9 @@ output/plots/prediction_maps_by_order.png:	output/all_data/infection/phylogeny/h
 
 
 # - Prioritisation based on scores
-output/plots/phylogeny_predictions_supplement.pdf:	output/all_data/infection/phylogeny/holdout_predictions.rds \
-													data/internal/timetree_mammalia.nwk
+output/plots/phylogeny_predictions_supplement.pdf:	output/all_data/infection/aa_distance/holdout_predictions.rds \
+													data/internal/timetree_mammalia.nwk \
+													data/calculated/cleaned_shedding_data.rds
 	Rscript scripts/plotting/plot_phylogeny_predictions_supplement.R
 
 
@@ -522,8 +529,7 @@ output/si_tables/supplement_training_data.xlsx: data/internal/infection_data.xls
 												data/calculated/cleaned_infection_data.rds \
 												data/calculated/cleaned_shedding_data.rds \
 												data/calculated/taxonomy.rds \
-												output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds \
-												output/all_data/infection/phylogeny/holdout_predictions.rds \
+												output/all_data/infection/aa_distance/holdout_predictions.rds \
 												data/internal/NCBI_ACE2_orthologs.csv
 	Rscript scripts/plotting/make_supplementary_tables.R
 

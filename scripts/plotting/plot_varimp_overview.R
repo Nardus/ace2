@@ -87,11 +87,11 @@ prepare_data <- function(varimps, model_label,
 }
 
 entropy_full <- prepare_data(varimp_full_model, "All ACE2 representations combined")
-entropy_dist <- prepare_data(varimp_dist_model, "ACE2 consensus distance")
+entropy_dist <- prepare_data(varimp_dist_model, "AA consensus distance")
 
 entropy_combined <- bind_rows(entropy_full, entropy_dist) %>%
   mutate(model = factor(.data$model,
-                        levels = c("All ACE2 representations combined", "ACE2 consensus distance")))
+                        levels = c("All ACE2 representations combined", "AA consensus distance")))
 
 
 p <- ggplot(entropy_combined, aes(x = selected, y = entropy)) +

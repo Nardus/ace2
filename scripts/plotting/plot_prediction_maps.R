@@ -24,7 +24,7 @@ RESOLUTION <- 1/6
 
 
 # ---- Data ----------------------------------------------------------------------------------------
-ensemble_predictions <- read_rds("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
+ensemble_predictions <- read_rds("output/all_data/infection/ensemble_aa_distance_self/holdout_predictions.rds")
 phylogeny_predictions <- read_rds("output/all_data/infection/phylogeny/holdout_predictions.rds")
 
 infection_data <- read_rds("data/calculated/cleaned_infection_data.rds")
@@ -65,7 +65,7 @@ plot_species <- data.frame(species = c(ensemble_predictions$species,
 
 missing_spp <- plot_species[!plot_species %in% iucn_ranges$binomial]
 
-if(length(missing_spp) != 0)
+if (length(missing_spp) != 0)
   warning("Some species do not have range data: ", paste(missing_spp, collapse = ", "))
 
 ensemble_predictions <- ensemble_predictions %>% 
@@ -96,6 +96,42 @@ base_plot_freq <- base_plot +
   geom_sf(fill = "white", size = 0.05, data = continent_outlines) +
   coord_sf(ylim = c(-62.5, 90), expand = FALSE)
 
+# ---- Sequences / species available ---------------------------------------------------------------
+plot_count_raster <- function(raster_obj, label = "Susceptible\nspecies", base = base_plot_counts,
+                              guide = TRUE, limits = NULL) {
+  rasterdf <- as.data.frame(raster_obj, xy = TRUE)
+
+  p <- base +
+    geom_raster(aes(x = x, y = y, fill = layer), data = rasterdf) +
+    scale_fill_viridis_c(breaks = breaks_pretty(), direction = 1, na.value = NA, limits = limits) +
+    labs(fill = label)
+
+  if (!guide) {
+    p <- p + guides(fill = "none")
+  }
+
+  p
+}
+
+available_ranges_ensemble <- iucn_ranges %>%
+  filter(.data$binomial %in% ensemble_predictions$species)
+
+available_ranges_phylogeny <- iucn_ranges %>%
+  filter(.data$binomial %in% phylogeny_predictions$species)
+
+available_raster_ensemble <- fasterize(available_ranges_ensemble, blank_raster, fun = "sum")
+available_raster_phylogeny <- fasterize(available_ranges_phylogeny, blank_raster, fun = "sum")
+
+p_available_ensemble <- plot_count_raster(available_raster_ensemble, 
+                                          label = "Number of\nspecies", 
+                                          base = base_plot_counts) +
+  ggtitle("Species with ACE2 sequences")
+
+p_available_phylogeny <- plot_count_raster(available_raster_phylogeny, 
+                                           label = "Number of\nspecies", 
+                                           base = base_plot_counts) +
+  ggtitle("Species in phylogeny")
+
 
 # ---- Total susceptible -----------------------------------------------------------------------------
 get_predicted_raster <- function(predictions, base_raster = blank_raster, range_data = iucn_ranges) {
@@ -106,30 +142,14 @@ get_predicted_raster <- function(predictions, base_raster = blank_raster, range_
   fasterize(susceptible_ranges, base_raster, fun = "sum")
 }
 
-plot_count_raster <- function(raster_obj, label = "Susceptible\nspecies", base = base_plot_counts, 
-                              guide = TRUE, limits = NULL) {
-  rasterdf <- as.data.frame(raster_obj, xy = TRUE)
-  
-  p <- base +  
-    geom_raster(aes(x = x, y = y, fill = layer), data = rasterdf) +
-    scale_fill_viridis_c(breaks = breaks_pretty(), direction = 1, na.value = NA, limits = limits) +
-    labs(fill = label)
-  
-  if (!guide) {
-    p <- p + guides(fill = "none")
-  }
-  
-  p
-}
-
 susceptible_raster_ensemble <- get_predicted_raster(ensemble_predictions)
 susceptible_raster_phylogeny <- get_predicted_raster(phylogeny_predictions)
 
 p_count_ensemble <- plot_count_raster(susceptible_raster_ensemble) +
-  ggtitle("ACE2 / phylogeny ensemble")
+  ggtitle("Best ACE2-based model")
 
 p_count_phylogeny <- plot_count_raster(susceptible_raster_phylogeny) +
-  ggtitle("Phylogeny-only")
+  ggtitle("Host phylogeny-based model")
 
 
 # ---- Observed / expected -------------------------------------------------------------------------
@@ -198,15 +218,16 @@ p_obs_phylogeny <- plot_oe_raster(oe_phylogeny,
 
 
 # ---- Output --------------------------------------------------------------------------------------
-combined_plot <- plot_grid(p_count_ensemble, p_count_phylogeny,
+combined_plot <- plot_grid(p_available_ensemble, p_available_phylogeny,
+                           p_count_ensemble, p_count_phylogeny,
                            p_obs_ensemble, p_obs_phylogeny,
-                           nrow = 2, rel_heights = c(1.11, 1),
+                           nrow = 3, rel_heights = c(1.11, 1.11, 1),
                            align = "v", axis = "lrtb",
-                           labels = c("A", "B", "C", "D"),
-                           vjust = c(2.5, 2.5, 1.5, 1.5))
+                           labels = c("A", "B", "C", "D", "E", "F"),
+                           vjust = c(2.5, 2.5, 2.5, 2.5, 1.5, 1.5))
 
 ggsave2("output/plots/prediction_maps.png", combined_plot,
-        width = 7, height = 2.74)
+        width = 7, height = 4.19)
 
 
 # ---- Values in text ------------------------------------------------------------------------------
@@ -231,7 +252,7 @@ cat(sprintf("\n%3.3f%% of mammals amd %3.3f%% of birds in current data are susce
             nrow(bird_data)))
 
 # Predictions
-ensemble_predictions <- read_rds("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
+ensemble_predictions <- read_rds("output/all_data/infection/ensemble_aa_distance_self/holdout_predictions.rds")
 phylogeny_predictions <- read_rds("output/all_data/infection/phylogeny/holdout_predictions.rds")
 
 # Overall
@@ -277,77 +298,3 @@ cat(sprintf("Phylogeny model predicts %3.3f%% of mammals and %3.3f%% of birds to
             phylo_bird$freq * 100,
             phylo_mammal$n,
             phylo_bird$n))
-
-
-# ---- Susceptible species in hotspots -------------------------------------------------------------
-get_species_max <- function(species, ranges, raster) {
-  # Find the maximum value in 'raster' within a given species' range
-  sp_range <- ranges %>% 
-    filter(.data$binomial == species)
-  
-  sp_raster <- mask(raster, sp_range)
-  
-  maxValue(sp_raster)
-}
-
-find_hotspot_species <- function(oe_raster, predictions, cutoff, all_ranges = iucn_ranges) {
-  valid_ranges <- all_ranges %>% 
-    filter(.data$binomial %in% predictions$species)
-  
-  all_species <- unique(valid_ranges$binomial)
-  
-  range_max <- mclapply(all_species, get_species_max,
-                        ranges = valid_ranges,
-                        raster = oe_raster,
-                        mc.cores = 8)
-  
-  range_max <- unlist(range_max)
-  range_max[is.na(range_max)] <- -999  # NA's caused by very small ranges (below resolution of raster, but we only want the main species visible on the map)
-  
-  all_species[range_max > cutoff]
-}
-
-hotspot_spp_ensemble <- find_hotspot_species(oe_ensemble, ensemble_predictions, cutoff = 1.1)
-hotspot_spp_phylogeny <- find_hotspot_species(oe_phylogeny, phylogeny_predictions, cutoff = 1.1)
-
-hotspot_susceptibles_ensemble <- ensemble_predictions %>% 
-  filter(.data$predicted_label == "True") %>% 
-  filter(.data$species %in% hotspot_spp_ensemble) %>% 
-  pull(.data$species)
-
-hotspot_susceptibles_phylogeny <- phylogeny_predictions %>% 
-  filter(.data$predicted_label == "True") %>% 
-  filter(.data$species %in% hotspot_spp_phylogeny) %>% 
-  pull(.data$species)
-
-# Plot these (for internal use)
-plot_ranges <- function(all_species, susceptibles, out_folder,
-                        all_ranges = iucn_ranges, base_plot = base_plot_freq) {
-  for (spp in all_species) {
-    rnge <- all_ranges %>% 
-      filter(.data$binomial == spp)
-    
-    label <- if_else(spp %in% susceptibles,
-                     paste(spp, "(susceptible)"),
-                     paste(spp, "(not susceptible)"))
-    
-    p <- base_plot + 
-      geom_sf(colour = "red", data = rnge) + 
-      ggtitle(label)
-    
-    out_name <- paste(spp, ".png") %>% 
-      paste(out_folder, ., sep = "/")
-      
-    ggsave2(out_name, p, width = 7, height = 3.2)
-  }
-}
-
-dir.create("output/plots/hotspot_species/ensemble", recursive = TRUE)
-dir.create("output/plots/hotspot_species/phylogeny")
-
-plot_ranges(hotspot_spp_ensemble, hotspot_susceptibles_ensemble,
-            out_folder = "output/plots/hotspot_species/ensemble")
-
-
-plot_ranges(hotspot_spp_phylogeny, hotspot_susceptibles_phylogeny,
-            out_folder = "output/plots/hotspot_species/phylogeny")

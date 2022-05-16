@@ -18,7 +18,7 @@ suppressPackageStartupMessages({
 
 
 # ---- Data ----------------------------------------------------------------------------------------
-ensemble_predictions <- readRDS("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
+ensemble_predictions <- readRDS("output/all_data/infection/ensemble_aa_distance_self/holdout_predictions.rds")
 phylogeny_predictions <- readRDS("output/all_data/infection/phylogeny/holdout_predictions.rds")
 
 infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")
@@ -95,6 +95,20 @@ tree_panel <- ggtree(time_tree, right = TRUE) +
   theme(plot.margin = margin(t = 5.5, r = 0, b = 5.5, l = 5.5))
 
 
+# Highlight orders in the Boreoeutheria clade:
+boreoeutheria_orders <- c(
+  "Rodentia", "Lagomorpha", "Scandentia", "Dermoptera", "Primates",
+  "Eulipotyphla", "Chiroptera", "Cetartiodactyla", "Perissodactyla",
+  "Pholidota", "Carnivora"
+)
+
+boreoeutheria_node <- getMRCA(time_tree, boreoeutheria_orders)
+
+tree_panel <- groupClade(tree_panel, boreoeutheria_node, "clade") +
+  aes(colour = clade) +
+  scale_colour_manual(values = c("0" = "grey20", "1" = "#e41a1c"), guide = "none")
+
+
 # Get order of labels for other panels
 label_order <- tree_panel$data %>% 
   filter(.data$isTip) %>% 
@@ -106,10 +120,10 @@ label_order <- tree_panel$data %>%
 
 # ---- Merge data ----------------------------------------------------------------------------------
 ensemble_predictions <- ensemble_predictions %>% 
-  mutate(run_label = "ACE2 / phylogeny ensemble")
+  mutate(run_label = "ACE2 ensemble")
 
 phylogeny_predictions <- phylogeny_predictions %>% 
-  mutate(run_label = "Phylogeny-only")
+  mutate(run_label = "Host phylogeny")
 
 infection_data <- infection_data %>% 
   mutate(run_label = "Observed",
@@ -119,13 +133,19 @@ infection_data <- infection_data %>%
 all_predictions <- bind_rows(ensemble_predictions, phylogeny_predictions, infection_data) %>% 
   mutate(run_label = factor(.data$run_label, 
                             levels = c("Observed",
-                                       "ACE2 / phylogeny ensemble", 
-                                       "Phylogeny-only"))) %>% 
+                                       "ACE2 ensemble", 
+                                       "Host phylogeny"))) %>% 
   left_join(taxonomy_table, by = c("species" = "internal_name")) %>% 
   filter(!is.na(.data$class))
 
 
 # ---- Predictions by taxonomic order --------------------------------------------------------------
+bold_labels <- if_else(label_order %in% boreoeutheria_orders,
+                       sprintf("**%s**", label_order),
+                       label_order)
+
+names(bold_labels) <- label_order
+
 order_summary <- all_predictions %>%
   filter(!is.na(.data$order)) %>% 
   group_by(.data$run_label, .data$class, .data$order) %>%
@@ -145,7 +165,7 @@ data_panel <- ggplot(order_summary, aes(x = order, y = prop_susceptible, fill  =
                 width = 0.4,
                 color = "grey40") +
   
-  scale_x_discrete(position = "top") +
+  scale_x_discrete(labels = bold_labels, position = "top") +
   scale_y_continuous(expand = expansion(add = c(0, 0.05))) +
   scale_fill_brewer(palette = "Dark2") +
   
@@ -155,13 +175,14 @@ data_panel <- ggplot(order_summary, aes(x = order, y = prop_susceptible, fill  =
   labs(x = "Order", y = "Proportion susceptible", fill = "Class") +
   coord_flip() +
   theme(axis.title.y = element_blank(),
+        axis.text.y.right = element_markdown(),
         plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 0),
         panel.grid.major.y = element_line(colour = "grey90"))
 
 
 # ---- Counts vs expected -------------------------------------------------------------------------
 count_summary <- order_summary %>% 
-  filter(.data$run_label != "ACE2 / phylogeny ensemble")
+  filter(.data$run_label != "ACE2 ensemble")
 
 count_labels <- count_summary %>% 
   arrange(.data$order) %>% 
@@ -199,7 +220,7 @@ tree_plot <- plot_grid(tree_panel, data_panel,
                        align = "h", axis = "tb")
 
 final_plot <- plot_grid(tree_plot, count_plot,
-                        nrow = 2, rel_heights = c(1.2, 1),
+                        nrow = 2, rel_heights = c(1.25, 1),
                         labels = c("A", "B"))
 
 ggsave2("output/plots/predictions_by_order_supplement.pdf", final_plot,

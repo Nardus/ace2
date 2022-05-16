@@ -21,7 +21,7 @@ taxonomy <- readRDS("data/calculated/taxonomy.rds")
 # Using holdout predictions and "fitted values", to match earlier studies (which had no cross-validation)
 ace2_preds <- readRDS("output/all_data/infection/all_features/holdout_predictions.rds")
 phylo_preds <- readRDS("output/all_data/infection/phylogeny/holdout_predictions.rds")
-ensemble_preds <- readRDS("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
+ensemble_preds <- readRDS("output/all_data/infection/ensemble_aa_distance_self/holdout_predictions.rds")
 
 
 # ---- Fix taxonomy --------------------------------------------------------------------------------
@@ -62,8 +62,8 @@ ace2_preds <- ace2_preds %>%
   select(.data$species, 
          prediction = .data$predicted_label,
          raw_score = .data$probability) %>% 
-  mutate(citation_key = "This study (ACE2-based)",
-         predictor = "ACE2-based",
+  mutate(citation_key = "This study (All ACE2 representations)",
+         predictor = "All ACE2 representations",
          prediction_type = "sequence-based")
 
 
@@ -80,8 +80,8 @@ ensemble_preds <- ensemble_preds %>%
   select(.data$species, 
          prediction = .data$predicted_label,
          raw_score = .data$probability) %>% 
-  mutate(citation_key = "This study (ensemble)",
-         predictor = "ensemble",
+  mutate(citation_key = "This study (ACE2 ensemble)",
+         predictor = "ACE2 ensemble",
          prediction_type = "ensemble")
 
 
