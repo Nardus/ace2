@@ -43,6 +43,7 @@ dev_environment.yml
 # Generated files, etc.
 /D_Keen_MSC/
 /_exploratory/
+/scripts/_unused/
 
 /data/iucn_range_maps/MAMMALS_*
 /data/iucn_range_maps/*.pdf
