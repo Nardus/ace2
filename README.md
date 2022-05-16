@@ -1,30 +1,27 @@
 # Prediction of hosts susceptible to SARS-CoV infection using ACE2 protein sequences
 
-## Usage
+Code and data used in Mollentze et al. (2022), *Variation in the ACE2 receptor has limited utility for SARS-CoV-2 host prediction*. **Preprint**.
+
+## Requirements
+- Install the [mamba package manager](https://mamba.readthedocs.io/en/latest/installation.html)
+- All other requirements can then be installed using:
+
 ```
 mamba env create -f environment.yml
+```
+
+## Repeating published analyses
+To repeat all analyses and recreate the figures used in the manuscript, run:
+```
 conda activate sars_susceptibles
+make
 ```
 
-## _Development only (MacOS):_
-```
-export RSTUDIO_WHICH_R=$(which R)
-open -a Rstudio
-```
+## Usage notes
+1. Most required external data will be downloaded automatically, with two exceptions:
+    - **ACE2 sequences**. The `Makefile` contains code to download these, but any sequence updates by NCBI will mean sequences matching the earlier accession number used here cannot be dowloaded (easily). The sequences used here are therefore included in [`data/external/ace2_protein_sequences.fasta`](data/external/ace2_protein_sequences.fasta).
+    - **IUCN range data** (required to recreate map figures). Downloads require a log in, see [`data/iucn_range_maps/`](data/iucn_range_maps/) for instructions.
 
-
-## Data definitions
-
-### Shedding
-Whether RNA or infectious material was detected in either:
-    - nasal swab
-    - nasal wash?
-    - rectal swab
-    - faeces
-
-`shedding_virus`: Infectious virus demonstrated, either by onward transmission or by virus isolation/titration. Marked as negative if these techniques were attempted, but failed (even though e.g. virus isolation may have failed simply because the wrong cell line was used).
-`shedding_rna`: RNA detected
-
-
-## Usage
-*Note: This code is fairly resource-intensive, and may require adjustment to run in a non-workstation environment. Models are currently set to use 20 threads, and will require ~25GB RAM. Edit the `n_threads` argument in `Makefile` to reduce this. Training ensemble models requires at least 62GB of RAM - if less is available, see `scripts/train_ensemble.R` for instructions.*
+2. This pipeline was designed for workstations, and may need some minor modifications to run on a regular PC:
+    - By default, 20 parallel threads will be used. Edit the `--n_threads` argument throughout the [`Makefile`](Makefile) to change this
+    - Creating ensemble models may use large amounts of memory. See [`scripts/train_ensemble.R`](scripts/train_ensemble.R) for instructions if this becomes an issue.
