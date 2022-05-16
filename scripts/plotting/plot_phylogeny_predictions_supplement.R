@@ -6,6 +6,7 @@ suppressPackageStartupMessages({
     library(ape)
     library(ggplot2)
     library(cowplot)
+    library(ggtext)
     
     source("scripts/utils/timetree_constants.R")
     source("scripts/plotting/plotting_constants.R")
@@ -15,6 +16,8 @@ suppressPackageStartupMessages({
 all_predictions <- readRDS("output/all_data/infection/phylogeny/holdout_predictions.rds")
 
 mammal_tree <- read.tree("data/internal/timetree_mammalia.nwk")
+
+shedding_data <- readRDS("data/calculated/cleaned_shedding_data.rds")
 
 
 # ---- Clean up species names ----------------------------------------------------------------------
@@ -78,6 +81,29 @@ get_top_species <- function(p, preds = mammal_predictions, all_preds = all_predi
 top_species <- lapply(c(0.5, 0.6, 0.7, 0.8), get_top_species) %>% 
     bind_rows()
 
+
+# Mark shedding species on plot
+shedding_spp <- shedding_data %>%
+    filter(.data$species %in% all_predictions$species) %>%
+    filter(.data$shedding == "True") %>%
+    pull(.data$species)
+
+shedding_spp <- c(shedding_spp, "Odocoileus virginianus") # Too new to be in shedding data
+
+shedding_labels <- case_when(
+    shedding_spp == "Homo sapiens" ~ "Human",
+    shedding_spp == "Neovison vison" ~ "Mink",
+    shedding_spp == "Odocoileus virginianus" ~ "White-tailed<br>deer",
+    shedding_spp == "Rousettus aegyptiacus" ~ "Egyptian<br>fruit bat",
+    shedding_spp == "Canis familiaris" ~ "Dog",
+    shedding_spp == "Felis catus" ~ "Cat",
+    shedding_spp == "Nyctereutes procyonoides" ~ "Raccoon dog",
+    TRUE ~ ""
+)
+
+names(shedding_labels) <- shedding_spp
+
+
 # Plot
 pred_cutoff <- unique(all_predictions$cutoff)
 
@@ -102,13 +128,14 @@ p <- ggplot(mammal_predictions, aes(x = species, y = probability, colour = label
     geom_point(data = predictions_unknown) +
     geom_point(data = predictions_false) +
     geom_point(data = predictions_true) +
-    
+
+    scale_x_discrete(breaks = shedding_spp, labels = shedding_labels) +
     scale_y_continuous(expand = c(0, 0)) +
     scale_colour_manual(values = INFECTION_STATUS_COLOURS, na.value = MISSING_DATA_COLOUR) +
-    
+
     labs(x = "Species", y = "Predicted score", colour = "Infected") +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank())
+    theme(axis.text.x = element_markdown(angle = 90, hjust = 1, vjust = 0.5))
+    
 
 ggsave2("output/plots/phylogeny_predictions_supplement.pdf", p, width = 7, height = 5)
 
@@ -127,3 +154,9 @@ cat("\nAt the optimized cutoff, ",
     "species are predicted as susceptible, of which",
     sum(mammal_predictions$predicted_label == "True"),
     "are mammals\n\n")
+
+cat(sprintf(
+    "Sample sizes: %i (mammals), %i (birds)\n\n",
+    nrow(mammal_predictions),
+    nrow(all_predictions) - nrow(mammal_predictions)
+))
