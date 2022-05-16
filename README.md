@@ -1,5 +1,7 @@
 # Prediction of hosts susceptible to SARS-CoV infection using ACE2 protein sequences
 
+[![DOI](https://zenodo.org/badge/316297169.svg)](https://zenodo.org/badge/latestdoi/316297169)
+
 Code and data used in Mollentze et al. (2022), *Variation in the ACE2 receptor has limited utility for SARS-CoV-2 host prediction*. **Preprint**.
 
 ## Requirements
