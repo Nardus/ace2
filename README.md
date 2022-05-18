@@ -2,7 +2,7 @@
 
 [![DOI](https://zenodo.org/badge/316297169.svg)](https://zenodo.org/badge/latestdoi/316297169)
 
-Code and data used in Mollentze et al. (2022), *Variation in the ACE2 receptor has limited utility for SARS-CoV-2 host prediction*. **Preprint**.
+Code and data used in Mollentze et al. (2022), *Variation in the ACE2 receptor has limited utility for SARS-CoV-2 host prediction*. **Preprint**. [doi:10.1101/2022.05.16.492068](https://doi.org/10.1101/2022.05.16.492068).
 
 ## Requirements
 - Install the [mamba package manager](https://mamba.readthedocs.io/en/latest/installation.html)
