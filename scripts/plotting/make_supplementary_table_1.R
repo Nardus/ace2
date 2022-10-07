@@ -1,8 +1,6 @@
-## Build human-readable supplementary tables
+## Build human-readable supplementary table describing:
 #   - Training data & accessions
 #   - Shedding data
-#   - Predictions from all models
-#   - Holdout accessions
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -24,15 +22,6 @@ bib <- read.bib("data/internal/data_citations.bib")
 # Cleaned data
 infection_data <- readRDS("data/calculated/cleaned_infection_data.rds")
 shedding_data <- readRDS("data/calculated/cleaned_shedding_data.rds")
-
-# Predictions
-taxonomy <- readRDS("data/calculated/taxonomy.rds")
-ensemble_preds <- readRDS("output/all_data/infection/ensemble_all_features_phylogeny/holdout_predictions.rds")
-phylogeny_preds <- readRDS("output/all_data/infection/phylogeny/holdout_predictions.rds")
-
-# Holdout accessions
-ncbi_accessions <- read_csv("data/internal/NCBI_ACE2_orthologs.csv", 
-                            col_types = cols(.default = "c"))
 
 
 # ---- References ----------------------------------------------------------------------------------
@@ -156,44 +145,6 @@ shedding_data <- shedding_data %>%
 stopifnot(nrow(shedding_data) == n_distinct(shedding_data$species))
 
 
-# ---- Predictions ---------------------------------------------------------------------------------
-# Add taxonomy to allow easy filtering (particularly for large number of phylogeny predictions)
-pred_column_order <- c("class", "order", "suborder", "family", "subfamily", "genus",
-                       "species", "probability", "cutoff", "prediction")
-
-ensemble_preds <- ensemble_preds %>% 
-    filter(.data$prediction_type != "Fitted value") %>% 
-    rename(internal_name = .data$species) %>% 
-    left_join(taxonomy, by = "internal_name") %>%
-    select(-.data$species) %>% # Using internal names to avoid confusion
-    rename(species = .data$internal_name,
-           prediction = .data$predicted_label) %>% 
-    arrange(desc(.data$probability), .data$species) %>% 
-    select(all_of(pred_column_order))
-    
-phylogeny_preds <- phylogeny_preds %>% 
-    filter(.data$prediction_type != "Fitted value") %>% 
-    rename(internal_name = .data$species) %>% 
-    left_join(taxonomy, by = "internal_name") %>%
-    select(-.data$species) %>% # Using internal names to avoid confusion
-    rename(species = .data$internal_name,
-           prediction = .data$predicted_label) %>% 
-    arrange(desc(.data$probability), .data$species) %>% 
-    select(all_of(pred_column_order))
-
-
-# ---- Holdout accessions --------------------------------------------------------------------------
-holdout_accessions <- ncbi_accessions %>% 
-    select(internal_name = .data$`Scientific name`, 
-         ace2_accession = .data$`RefSeq Protein accessions`) %>% 
-  left_join(taxonomy, by = "internal_name") %>% 
-  filter(.data$species %in% ensemble_preds$species) %>% 
-  select(.data$species, .data$ace2_accession) %>% 
-  arrange(.data$species)
-
-stopifnot(all(ensemble_preds$species %in% holdout_accessions$species))
-
-
 # ---- Output --------------------------------------------------------------------------------------
 dir.create("output/si_tables/")
 
@@ -203,14 +154,3 @@ training_data <- list(infection = infection_data,
                       references = reference_df)
 
 write_xlsx(training_data, "output/si_tables/supplement_training_data.xlsx")
-
-
-# Holdout predictions
-predictions <- list(ace2_phylogeny_ensemble = ensemble_preds,
-                    phylogeny_only = phylogeny_preds)
-
-write_xlsx(predictions, "output/si_tables/supplement_holdout_predictions.xlsx")
-
-
-# Holdout accessions
-write_xlsx(holdout_accessions, "output/si_tables/supplement_holdout_accessions.xlsx")

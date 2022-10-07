@@ -564,11 +564,14 @@ output/si_tables/supplement_training_data.xlsx: data/internal/infection_data.xls
 												data/internal/ace2_accessions.csv \
 												data/internal/data_citations.bib \
 												data/calculated/cleaned_infection_data.rds \
-												data/calculated/cleaned_shedding_data.rds \
+												data/calculated/cleaned_shedding_data.rds
+	Rscript scripts/plotting/make_supplementary_table_1.R
+
+output/si_tables/supplement_predictions.xlsx:	output/all_data/infection/phylogeny/predictions.rds \
+												output/all_data/infection/phylogeny/holdout_predictions.rds \
 												data/calculated/taxonomy.rds \
-												output/all_data/infection/aa_distance/holdout_predictions.rds \
-												data/internal/NCBI_ACE2_orthologs.csv
-	Rscript scripts/plotting/make_supplementary_tables.R
+												data/internal/holdout_species.csv
+	Rscript scripts/plotting/make_supplementary_table_2.R
 
 
 # Make all plots
