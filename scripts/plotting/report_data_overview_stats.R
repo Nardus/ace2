@@ -28,6 +28,10 @@ sprintf("Infection data: %i susceptible, %i not susceptible",
         sum(infection_data$infected == "True"),
         sum(infection_data$infected == "False"))
 
+sprintf("%.2f%% of records involve SARS-CoV-2 in some way (might not be maximum evidence level)",
+        sum(str_detect(infection_data$viruses_true, "SARS-CoV-2") |
+              str_detect(infection_data$viruses_false, "SARS-CoV-2")) / nrow(infection_data) * 100)
+
 # Percentages
 total <- binom.test(sum(infection_data$infected == "True"), nrow(infection_data))
 mammal_only <- binom.test(sum(infection_data$infected == "True" & infection_data$species %in% mammals),
@@ -138,6 +142,22 @@ sprintf("%i of %i susceptible hosts (%.3f%%) are known to use ACE2",
         sum(ace2_used$ACE2_used),
         nrow(ace2_used),
         sum(ace2_used$ACE2_used) / nrow(ace2_used) * 100)
+
+
+# SARS-CoV-1 vs. 2
+cat("\n\nHost range similarity (all evidence levels):\n")
+both_tested <- infection_data %>% 
+  filter((grepl("SARS-CoV-1", .data$viruses_true, fixed = TRUE) | 
+            grepl("SARS-CoV-1", .data$viruses_false, fixed = TRUE)) &
+           (grepl("SARS-CoV-2", .data$viruses_true, fixed = TRUE) | 
+              grepl("SARS-CoV-2", .data$viruses_false, fixed = TRUE)))
+
+cov1 <- grepl("SARS-CoV-1", both_tested$viruses_true, fixed = TRUE)
+cov2 <- grepl("SARS-CoV-2", both_tested$viruses_true, fixed = TRUE)
+
+sprintf("%i species susceptible to both SARS-CoV-1 and SARS-CoV-2, out of %i tested for both", 
+        sum(cov2 & cov1),
+        nrow(both_tested))
 
 cat("\n\n")
 
