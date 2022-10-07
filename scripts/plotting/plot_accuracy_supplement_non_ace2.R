@@ -134,7 +134,7 @@ p_data <- ggplot(group_sizes, aes(x = virus, y = n_total, fill = infected)) +
 
 
 # ---- Combine -------------------------------------------------------------------------------------
-combined_plot <- plot_grid(p_data, p_acc, p_sens, p_spec,
+combined_plot <- plot_grid(p_data, p_sens, p_spec, p_acc,
                            nrow = 1, rel_widths = c(2, 1, 1, 1))
 
 
