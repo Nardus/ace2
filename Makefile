@@ -95,7 +95,7 @@ data/iucn_range_maps/%.shp: data/iucn_range_maps/%.zip
 	touch $@
 
 
-# ---- ACE2 alignment -----------------------------------------------------------------------
+# ---- ACE2 alignment ------------------------------------------------------------------------------
 # Align
 data/calculated/ace2_protein_alignment.fasta: data/external/ace2_protein_sequences.fasta
 	mkdir -p data/calculated
@@ -131,7 +131,7 @@ data/calculated/s_binding_alignment_positions.rds: data/calculated/ace2_protein_
 	Rscript scripts/calculate_features_s_binding.R
 
 
-# ---- Training: full model -----------------------------------------------------------------------
+# ---- Training: full model ------------------------------------------------------------------------
 # Using all data and all ACE2-based features
 # Output format is "dataset/response_var/feature_set/*"
 
@@ -154,7 +154,7 @@ output/all_data/%/all_features/predictions.rds: $(TRAINING_REQUIREMENTS)
 		--n_threads 20
 
 
-# ---- Training: individual feature sets ----------------------------------------------------------
+# ---- Training: individual feature sets -----------------------------------------------------------
 output/all_data/%/aa_categorical/predictions.rds: $(TRAINING_REQUIREMENTS)
 	Rscript scripts/train_models.R $* $(@D) \
 		--aa_categorical \
@@ -204,7 +204,7 @@ output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 		--random_seed 34264755 \
 		--n_threads 20
 
-# ---- Training: variations on best models --------------------------------------------------------
+# ---- Training: variations on best models ---------------------------------------------------------
 # Best ACE2 model restricted to S-binding sites only:
 output/all_data/%/_supplementary_runs/aa_distance_s_binding/predictions.rds:	$(TRAINING_REQUIREMENTS) \
 																				data/calculated/s_binding_alignment_positions.rds
@@ -237,8 +237,9 @@ output/all_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENT
 		--n_threads 20
 
 
-# ---- Training on data subsets ------------------------------------------------------------------------------------
+# ---- Training on data subsets --------------------------------------------------------------------
 # As above, output format is "dataset/response_var/feature_set/*"
+
 # All feature sets on data from each evidence level:
 #  (note that level 1 [natural infection observed] has no negative data, so 
 #  can't be included separately here)
@@ -271,7 +272,34 @@ output/l1+2_data/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMEN
 		--n_threads 20
 
 
-# ---- Train ensemble models ----------------------------------------------------------------------
+# Without Rhinolophid bats
+# - All ACE2 features
+output/no_rhinolophids/%/all_features/predictions.rds:	$(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		$(ALL_FEATURE_SETS) \
+		--exclude_rhinolophid \
+		--random_seed 45124422 \
+		--n_threads 20
+
+# - Phylogeny
+output/no_rhinolophids/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		--phylogeny \
+		--exclude_rhinolophid \
+		--random_seed 53241688 \
+		--n_threads 20
+
+# - ACE2 + phylogeny
+output/no_rhinolophids/%/all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
+	Rscript scripts/train_models.R $* $(@D) \
+		$(ALL_FEATURE_SETS) \
+		--phylogeny \
+		--exclude_rhinolophid \
+		--random_seed 97631262 \
+		--n_threads 20
+
+
+# ---- Train ensemble models -----------------------------------------------------------------------
 # All ACE2 + phylogeny
 output/all_data/%/ensemble_all_features_phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS) \
 																	output/all_data/%/all_features/predictions.rds \
@@ -303,7 +331,7 @@ output/all_data/%/ensemble_aa_distance_self/predictions.rds:	$(TRAINING_REQUIREM
 			--random_seed 09524845
 
 
-# ---- Enemurate training combinations ------------------------------------------------------------
+# ---- Enemurate training combinations -------------------------------------------------------------
 # Feature subsets
 RESPONSE_VARS = infection shedding
 FEATURE_SET_NAMES = $(subst --, , $(ALL_FEATURE_SETS))  # Remove leading "--"
@@ -327,6 +355,11 @@ DATA_FOLDERS =	$(foreach a,$(DATASETS), \
 L1_L2_MODELS = $(patsubst %, output/%/all_features_phylogeny/predictions.rds, $(DATA_FOLDERS))
 L3_MODELS = output/l3+4_data/infection/all_features_phylogeny/predictions.rds
 
+# - Rhinolophids excluded
+NO_RHINOLOPHIDS =	output/no_rhinolophids/infection/all_features/predictions.rds \
+					output/no_rhinolophids/infection/phylogeny/predictions.rds \
+					output/no_rhinolophids/infection/all_features_phylogeny/predictions.rds
+
 
 # Ensemble models
 ENSEMBLE_COMBINATIONS = ensemble_all_features_phylogeny \
@@ -348,7 +381,7 @@ OTHER_MODELS =	output/all_data/infection/aa_distance_phylogeny/predictions.rds \
 # Shortcuts:
 .PHONY: train_feature_subsets train_data_subsets train
 train_feature_subsets: $(FEATURE_MODELS) $(PHYLO_MODELS)
-train_data_subsets: $(L1_L2_MODELS) $(L3_MODELS)
+train_data_subsets: $(L1_L2_MODELS) $(L3_MODELS) $(NO_RHINOLOPHIDS)
 
 train:	train_feature_subsets \
 		train_data_subsets \
@@ -433,6 +466,10 @@ output/plots/accuracy_shedding.pdf:	$(FEATURE_MODELS) \
 # - Supplement (data quality  / evidence level)
 output/plots/accuracy_data_subsets.pdf: $(L1_L2_MODELS) $(L3_MODELS)
 	Rscript scripts/plotting/plot_accuracy_data_subsets.R
+
+# - Supplement (rhinolophid bats)
+output/plots/accuracy_rhinolophid.pdf:	$(NO_RHINOLOPHIDS)
+	Rscript scripts/plotting/plot_accuracy_rhinolophid.R $< $@
 
 # - Supplement (non-ACE2 sarbecoviruses)
 output/plots/accuracy_non_ace2_all_features.pdf:	output/all_data/infection/all_features/predictions.rds \
@@ -544,6 +581,7 @@ plots: 	report_data_overview \
 		output/plots/accuracy_supplement_sbinding.pdf \
 		output/plots/accuracy_shedding.pdf \
 		output/plots/accuracy_data_subsets.pdf \
+		output/plots/accuracy_rhinolophid.pdf \
 		output/plots/accuracy_non_ace2_all_features.pdf \
 		output/plots/accuracy_non_ace2_phylogeny.pdf \
 		output/plots/varimp_overview.pdf \

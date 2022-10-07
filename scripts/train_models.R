@@ -48,6 +48,9 @@ data_group$add_argument("--evidence_min", type = "integer", choices = 1L:4L, def
 data_group$add_argument("--evidence_max", type = "integer", choices = 1L:4L, default = 4L,
                         help = "maximum evidence level to include (default = 4).")
 
+data_group$add_argument("--exclude_rhinolophid", action = "store_const", const = TRUE, default = FALSE,
+                        help = "exclude all rhinolophid species.")
+
 
 other_opts_group <- parser$add_argument_group("Other options")
 other_opts_group$add_argument("--s_binding_only", action = "store_const", const = TRUE, default = FALSE,
@@ -175,6 +178,12 @@ if (!(INPUT$evidence_min == 1 & INPUT$evidence_max == 4)) {
            evidence_level = as.integer(.data$evidence_level)) %>% 
     ungroup() %>% 
     select(-.data$evidence_true, -.data$evidence_false, -.data$new_response)
+}
+
+# Exclude rhinolophid bats (if requested)
+if (INPUT$exclude_rhinolophid) {
+  metadata <- metadata %>% 
+    filter(!str_starts(.data$species, "Rhinolophus"))
 }
 
 # Optional filtering to S-binding sites

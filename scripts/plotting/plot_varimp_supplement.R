@@ -14,26 +14,10 @@ suppressPackageStartupMessages({
 
 
 # ---- Data ----------------------------------------------------------------------------------------
+metadata <- readRDS("data/calculated/cleaned_infection_data.rds")
+
 feature_importance <- readRDS("output/all_data/infection/all_features/feature_importance.rds")
-
-feature_clusters <- readRDS("output/plots/intermediates/feature_clusters.rds")
-
-
-# ---- Mark sites known to interact with S ---------------------------------------------------------
-# Sites defined in plotting_constants.R
-cluster_binding <- feature_clusters %>%
-    group_by(.data$cluster) %>%
-    summarise(includes_binding_site = any(.data$feature_position_corrected %in% ALL_S_BINDING_INDS))
-
-feature_locations <- feature_clusters %>%
-    left_join(cluster_binding, by = "cluster") %>%
-    mutate(s_binding = case_when(.data$feature_position_corrected %in% ALL_S_BINDING_INDS ~ "S-binding",
-                                 .data$includes_binding_site ~ "Correlated with\nS-binding site",
-                                 TRUE ~ "Other"),
-        s_binding = factor(.data$s_binding, levels = c("S-binding",
-                                                       "Correlated with\nS-binding site",
-                                                       "Other"))) %>%
-    select(-.data$feature_position_corrected)
+shap_values <- readRDS("output/all_data/infection/all_features/shap_values.rds")
 
 
 # ---- Feature importance --------------------------------------------------------------------------
@@ -42,29 +26,49 @@ top_importance <- feature_importance %>%
     add_readable_feature_names() %>%
     arrange(.data$importance) %>%
     mutate(feature_label = factor(.data$feature_label, levels = .data$feature_label),
-           feature_type = factor(.data$feature_type)) %>%
-    left_join(feature_locations, by = "feature_position")
+           feature_type = factor(.data$feature_type))
 
-# Add cluster info
-# - Renaming clusters by importance
-cluster_labels <- top_importance %>%
-    group_by(.data$cluster) %>%
-    summarise(cluster_importance = sum(.data$importance), .groups = "drop") %>%
-    arrange(.data$cluster_importance) %>%
-    mutate(cluster_label = rank(-.data$cluster_importance, ties.method = "random"),
-           cluster_label = factor(.data$cluster_label, levels = .data$cluster_label)) %>%
-    select(-.data$cluster_importance)
-
-top_importance <- top_importance %>%
-    left_join(cluster_labels, by = "cluster")
-
-# Plot
 p_overall_importance <- ggplot(top_importance, aes(x = feature_label, y = importance,
                                fill = feature_type)) +
     geom_col(colour = "grey20", size = 0.2) +
     coord_flip() +
     scale_fill_brewer(palette = "Set2", na.value = "grey60", guide = "none") +
     labs(y = "Effect magnitude", x = "Selected feature", fill = "Measure")
+
+
+# ---- Inset - compare reservoir and other species -------------------------------------------------
+spp_groups <- metadata %>% 
+  mutate(species_group = if_else(str_starts(.data$species, "Rhinolophus"),
+                                 "Rhinolophid bats", 
+                                 "Other species")) %>% 
+  select(.data$species_group)
+
+group_importance <- shap_values %>% 
+  data.frame() %>% 
+  bind_cols(spp_groups) %>% 
+  pivot_longer(!species_group, names_to = "feature", values_to = "shap") %>% 
+  group_by(.data$species_group, .data$feature) %>% 
+  summarise(importance = mean(abs(.data$shap)), .groups = "drop") %>% 
+  filter(.data$feature != "BIAS") %>% 
+  filter(.data$importance > 0) %>%
+  add_readable_feature_names() %>% 
+  pivot_wider(id_cols=c("feature", "feature_type"),
+              names_from = "species_group", values_from = "importance")
+
+group_max <- max(group_importance$`Rhinolophid bats`, group_importance$`Other species`)
+
+inset <- ggplot(group_importance, aes(x = `Rhinolophid bats`, y = `Other species`, colour = feature_type)) +
+  geom_abline(linetype = 2, colour = "grey80") +
+  geom_point() +
+  scale_colour_brewer(palette = "Set2", na.value = "grey60", guide = "none") +
+  scale_x_log10(limits = c(0.001, group_max)) +
+  scale_y_log10(limits = c(0.001, group_max)) +
+  coord_equal()
+
+p_overall_importance <- ggdraw(p_overall_importance) +
+  draw_plot(inset, 
+            x = 0.45, y = 0.05, 
+            width = 0.5, height = 0.5)
 
 
 # ---- Importance by site --------------------------------------------------------------------------
@@ -81,15 +85,18 @@ site_labels <- top_importance %>%
 site_importance <- top_importance %>%
     left_join(site_labels, by = c("feature_position", "feature_position_corrected"))
 
+site_labels <- site_importance %>% 
+  distinct(.data$site_label_continuous, .data$site_label)
+
 p_site_importance <- ggplot(site_importance, aes(x = site_label_continuous, y = importance,
                                                  fill = feature_type)) +
     geom_col(colour = "grey20", size = 0.2, position = "stack") +
     coord_flip() +
-    scale_x_continuous(breaks = site_importance$site_label_continuous,
-                       labels = site_importance$site_label) +
+    scale_x_continuous(breaks = site_labels$site_label_continuous,
+                       labels = site_labels$site_label) +
     scale_fill_brewer(palette = "Set2", na.value = "grey60", drop = FALSE) +
     labs(y = "Total effect magnitude", x = "Sequence position (human ACE2)", fill = "Measure") +
-    theme(legend.position = c(0.66, 0.16))
+    theme(legend.position = c(0.74, 0.16))
 
 
 # ---- Combine--------------------------------------------------------------------------------------
@@ -113,36 +120,3 @@ cat(
     sum(top_importance$feature_position_corrected %in% ALL_S_BINDING_INDS),
     "included sites are known to interact with S\n"
 )
-
-# Expected ratio
-s_clusters <- feature_clusters %>%
-    left_join(cluster_binding, by = "cluster") %>%
-    filter(!.data$feature_position_corrected %in% ALL_S_BINDING_INDS) %>%
-    mutate(selected_site = .data$feature_position %in% top_importance$feature_position)
-
-stopifnot(n_distinct(s_clusters$feature_position) == nrow(s_clusters))
-
-exp_ratio <- sum(s_clusters$includes_binding_site) / nrow(s_clusters)
-sprintf(
-    "%3.1f%% of available positions are correlated with an S-interacting site\n",
-    exp_ratio * 100
-) %>%
-    cat()
-
-# Observed ratio
-observed <- sum(s_clusters$selected_site & s_clusters$includes_binding_site)
-available <- sum(s_clusters$selected_site)
-test_result <- binom.test(
-    x = observed,
-    n = available,
-    p = exp_ratio
-)
-
-sprintf(
-    "%i of %i selected sites clustered with S-binding sites (%3.1f%%, p-value compared to expected ratio = %3.3f)\n\n",
-    observed,
-    available,
-    test_result$estimate * 100,
-    test_result$p.value
-) %>%
-    cat()
