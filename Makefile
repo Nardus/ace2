@@ -204,6 +204,7 @@ output/all_data/%/phylogeny/predictions.rds:	$(TRAINING_REQUIREMENTS)
 		--random_seed 34264755 \
 		--n_threads 20
 
+
 # ---- Training: variations on best models ---------------------------------------------------------
 # Best ACE2 model restricted to S-binding sites only:
 output/all_data/%/_supplementary_runs/aa_distance_s_binding/predictions.rds:	$(TRAINING_REQUIREMENTS) \
@@ -515,7 +516,7 @@ output/plots/existing_predictions.pdf:	output/plots/raw_data_overview.pdf \
 	Rscript scripts/plotting/plot_existing_predictions.R
 
 
-# TODO: add SI plot (plot_prediction_comparison.R)
+# - Supplement: show cnotinuous values for existing predictions
 output/plots/existing_predictions_supplement.pdf:	data/internal/timetree_amniota.nwk \
 													output/plots/intermediates/prediction_dendrogram.rds \
 													output/plots/raw_data_overview.pdf \
@@ -574,7 +575,7 @@ output/si_tables/supplement_predictions.xlsx:	output/all_data/infection/phylogen
 	Rscript scripts/plotting/make_supplementary_table_2.R
 
 
-# Make all plots
+# Make all plots / tables
 .PHONY: plots
 plots: 	report_data_overview \
 		report_distance_metric_correlation \
@@ -597,4 +598,5 @@ plots: 	report_data_overview \
 		output/plots/ace2_availability_map_supplement.png \
 		output/plots/prediction_maps_by_order.png \
 		output/plots/phylogeny_predictions_supplement.pdf \
-		output/si_tables/supplement_training_data.xlsx
+		output/si_tables/supplement_training_data.xlsx \
+		output/si_tables/supplement_predictions.xlsx
